@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cas-fabric-protocol/schemas/node.schema.json",
+  "title": "Node",
+  "description": "Identity and capability declaration for a CAS Fabric node. See RFC-004.",
+  "type": "object",
+  "status": "stub — RFC-004 not yet accepted",
+  "properties": {
+    "node_id": {
+      "type": "string",
+      "description": "Unique identifier for this node"
+    },
+    "capabilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of capability identifiers this node provides"
+    },
+    "archetype": {
+      "type": "string",
+      "enum": ["coordinator", "wisdom", "risk_assessor", "executor", "infrastructure", "memory", "sensor", "custom"],
+      "description": "Behavioral archetype. See RFC-003 and docs/terminology.md"
+    },
+    "version": {
+      "type": "string"
+    },
+    "trust_level": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  },
+  "required": ["node_id", "capabilities"]
+}

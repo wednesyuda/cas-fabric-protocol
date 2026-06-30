@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cas-fabric-protocol/schemas/message.schema.json",
+  "title": "Message",
+  "description": "Base message envelope for all CAS Fabric communications.",
+  "type": "object",
+  "properties": {
+    "message_id": {
+      "type": "string",
+      "description": "Unique message identifier"
+    },
+    "type": {
+      "type": "string",
+      "description": "Message type in dot-notation. e.g. memory.query, reasoning.request, autonomic.health"
+    },
+    "source_node": {
+      "type": "string",
+      "description": "node_id of the sending node"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Message-type specific content"
+    },
+    "values_signature": {
+      "type": "object",
+      "description": "Values Fabric presence marker. Must be present on all reasoning requests.",
+      "properties": {
+        "values_consulted": { "type": "boolean" },
+        "tension_detected": { "type": "boolean" },
+        "ethical_alignment_score": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    }
+  },
+  "required": ["message_id", "type", "source_node", "timestamp", "payload"]
+}
