@@ -13,8 +13,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import signal
 import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fabric_nats import NATSFabric
@@ -23,18 +26,86 @@ from skill_genome import retention_update
 
 LOGGER = logging.getLogger("cas_fabric.task_coordinator")
 PROTOCOL_VERSION = "cas-fabric.task-auction.v0.1"
+GOAL_PROTOCOL_VERSION = "cas-fabric.goal-system.v0.1"
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+class GoalStore:
+    def __init__(self, path: str | None = None) -> None:
+        self.path = Path(path or os.getenv("CAS_GOAL_STORE_PATH", "/tmp/cas-fabric-goals.json"))
+        self.goals: dict[str, dict[str, Any]] = {}
+
+    def load(self) -> None:
+        if self.path.exists():
+            self.goals = json.loads(self.path.read_text(encoding="utf-8"))
+
+    def save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(self.goals, indent=2, sort_keys=True), encoding="utf-8")
+
+    def create(self, intent: str, required_skills: list[str], priority: str = "medium") -> dict[str, Any]:
+        goal_id = str(uuid.uuid4())
+        timestamp = now_iso()
+        goal = {
+            "type": "goal",
+            "protocol": GOAL_PROTOCOL_VERSION,
+            "goal_id": goal_id,
+            "intent": intent,
+            "required_skills": required_skills,
+            "priority": priority,
+            "state": "created",
+            "created_at": timestamp,
+            "updated_at": timestamp,
+            "history": [{"state": "created", "timestamp": timestamp}],
+        }
+        self.goals[goal_id] = goal
+        self.save()
+        return goal
+
+    def get(self, goal_id: str) -> dict[str, Any] | None:
+        return self.goals.get(goal_id)
+
+    def transition(self, goal_id: str, state: str, **metadata: Any) -> dict[str, Any]:
+        goal = self.goals[goal_id]
+        timestamp = now_iso()
+        goal["state"] = state
+        goal["updated_at"] = timestamp
+        event = {"state": state, "timestamp": timestamp}
+        if metadata:
+            event["metadata"] = metadata
+            goal.setdefault("metadata", {}).update(metadata)
+        goal.setdefault("history", []).append(event)
+        self.save()
+        return goal
+
+    def update(self, goal_id: str, patch: dict[str, Any]) -> dict[str, Any]:
+        goal = self.goals[goal_id]
+        for key in ("intent", "required_skills", "priority"):
+            if key in patch:
+                goal[key] = patch[key]
+        self.transition(goal_id, str(patch.get("state", goal["state"])), patch=patch)
+        return goal
 
 
 class TaskCoordinator:
     def __init__(self) -> None:
         self.fabric = NATSFabric()
+        self.goals = GoalStore()
 
     async def start(self) -> None:
+        self.goals.load()
         await self.fabric.connect()
+        await self.fabric.subscribe_async("capability.goal.create", self.handle_goal_create)
+        await self.fabric.subscribe_async("capability.goal.status", self.handle_goal_status)
+        await self.fabric.subscribe_async("capability.goal.update", self.handle_goal_update)
+        await self.fabric.subscribe_async("capability.goal.complete", self.handle_goal_complete)
         await self.fabric.subscribe_async("capability.goal.submit", self.handle_goal)
         LOGGER.info("Task coordinator ready: capability=goal.submit")
 
-    async def handle_goal(self, message: dict) -> None:
+    async def handle_goal_create(self, message: dict) -> None:
         respond = message.get("respond")
         payload = message.get("payload", {})
         try:
@@ -44,8 +115,84 @@ class TaskCoordinator:
                 raise ValueError("intent must not be empty")
             if not required_skills:
                 raise ValueError("required_skills must not be empty")
+            goal = self.goals.create(intent, required_skills, str(payload.get("priority", "medium")))
+            result = {"ok": True, "goal": goal}
+        except Exception as exc:
+            LOGGER.exception("goal.create failed")
+            result = {"ok": False, "error": str(exc)}
+        if respond:
+            await respond(result)
 
-            goal_id = str(uuid.uuid4())
+    async def handle_goal_status(self, message: dict) -> None:
+        respond = message.get("respond")
+        payload = message.get("payload", {})
+        try:
+            goal_id = str(payload["goal_id"])
+            goal = self.goals.get(goal_id)
+            if not goal:
+                raise KeyError(f"goal not found: {goal_id}")
+            result = {"ok": True, "goal": goal}
+        except Exception as exc:
+            result = {"ok": False, "error": str(exc)}
+        if respond:
+            await respond(result)
+
+    async def handle_goal_update(self, message: dict) -> None:
+        respond = message.get("respond")
+        payload = message.get("payload", {})
+        try:
+            goal_id = str(payload["goal_id"])
+            if not self.goals.get(goal_id):
+                raise KeyError(f"goal not found: {goal_id}")
+            goal = self.goals.update(goal_id, payload.get("patch", {}))
+            result = {"ok": True, "goal": goal}
+        except Exception as exc:
+            LOGGER.exception("goal.update failed")
+            result = {"ok": False, "error": str(exc)}
+        if respond:
+            await respond(result)
+
+    async def handle_goal_complete(self, message: dict) -> None:
+        respond = message.get("respond")
+        payload = message.get("payload", {})
+        try:
+            goal_id = str(payload["goal_id"])
+            if not self.goals.get(goal_id):
+                raise KeyError(f"goal not found: {goal_id}")
+            goal = self.goals.transition(goal_id, "completed", result=payload.get("result", {}))
+            result = {"ok": True, "goal": goal}
+        except Exception as exc:
+            LOGGER.exception("goal.complete failed")
+            result = {"ok": False, "error": str(exc)}
+        if respond:
+            await respond(result)
+
+    async def handle_goal(self, message: dict) -> None:
+        respond = message.get("respond")
+        payload = message.get("payload", {})
+        try:
+            goal_id = str(payload.get("goal_id") or "")
+            if goal_id:
+                goal = self.goals.get(goal_id)
+                if not goal:
+                    raise KeyError(f"goal not found: {goal_id}")
+                intent = str(goal["intent"])
+                required_skills = [str(s) for s in goal.get("required_skills", [])]
+                priority = str(goal.get("priority", payload.get("priority", "medium")))
+            else:
+                intent = str(payload["intent"]).strip()
+                required_skills = [str(s) for s in payload.get("required_skills", [])]
+                if not intent:
+                    raise ValueError("intent must not be empty")
+                if not required_skills:
+                    raise ValueError("required_skills must not be empty")
+                goal = self.goals.create(intent, required_skills, str(payload.get("priority", "medium")))
+                goal_id = goal["goal_id"]
+                priority = str(goal["priority"])
+            if not intent:
+                raise ValueError("intent must not be empty")
+            if not required_skills:
+                raise ValueError("required_skills must not be empty")
             proposal_subject = f"goal.proposal.{goal_id}"
             proposals: list[dict[str, Any]] = []
 
@@ -62,14 +209,16 @@ class TaskCoordinator:
                     "intent": intent,
                     "required_skills": required_skills,
                     "deadline_ms": int(payload.get("deadline_ms", 0)),
-                    "priority": str(payload.get("priority", "medium")),
+                    "priority": priority,
                     "proposal_subject": proposal_subject,
                 },
             )
+            self.goals.transition(goal_id, "broadcast")
 
             await asyncio.sleep(float(payload.get("proposal_window_ms", 1000)) / 1000.0)
             valid_proposals = self.validate_proposals(goal_id, required_skills, proposals)
             assignments = self.resolve_assignments(goal_id, required_skills, valid_proposals)
+            self.goals.transition(goal_id, "assigned", assignment_count=len(assignments))
 
             for assignment in assignments:
                 await self.fabric.publish(
@@ -81,6 +230,7 @@ class TaskCoordinator:
                     },
                 )
 
+            self.goals.transition(goal_id, "executing")
             execution = await self.execute_assignments(intent, assignments)
             assigned_skills = {
                 skill
@@ -102,6 +252,14 @@ class TaskCoordinator:
                 "unassigned_skills": unassigned_skills,
                 "execution": execution,
             }
+            final_state = "completed" if result["ok"] else "failed"
+            result["goal"] = self.goals.transition(goal_id, final_state, result_summary={
+                "proposal_count": len(proposals),
+                "valid_proposal_count": len(valid_proposals),
+                "assignment_count": len(assignments),
+                "execution_ok": execution_ok,
+                "unassigned_skills": unassigned_skills,
+            })
         except Exception as exc:
             LOGGER.exception("goal.submit failed")
             result = {"ok": False, "error": str(exc)}
