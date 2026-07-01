@@ -5,7 +5,7 @@
 | RFC | 001 |
 | Title | Autonomic Layer |
 | Status | Draft |
-| Version | 0.1 |
+| Version | 0.2 |
 
 ---
 
@@ -83,16 +83,23 @@ All messages passing through the fabric must be observable. Observability is not
 
 ### 4. Transport Independence
 
-The Autonomic Layer must expose only four primitives to the layers above:
+The Autonomic Layer must expose only three primitives to the layers above:
 
 ```
 publish(topic, message)
 subscribe(topic, handler)
 request(capability, payload) → response
-reply(request_id, payload)
 ```
 
 Whether the underlying transport is MQTT, NATS, gRPC, shared memory, or Bluetooth is an implementation detail invisible to all layers above.
+
+**Revision note (v0.2):** an earlier draft of this RFC specified a fourth primitive, `reply(request_id, payload)`, modeled on resolving a pending request by ID. This was removed after Milestone 0 verification surfaced a genuine mismatch: most real pub/sub transports (NATS included) do not work by looking up a `request_id` later. They answer a request synchronously, inside the handler that received it, using a reply channel the transport sets up automatically.
+
+Requiring `reply(request_id, payload)` as a standalone primitive meant either leaking transport-specific correlation mechanics into the protocol, or leaving the primitive unimplementable in idiomatic form on transports like NATS — both violate Principle 3 (define contracts, never implementations).
+
+**The corrected contract:** `request(capability, payload) → response` is the complete request-reply contract. The *answering side* of that exchange is not a separate primitive — it is whatever a given transport's subscription handler does to produce a response for the message it received. Implementations are free to expose this however fits their transport (e.g. a `respond_to_request(msg, payload)` helper scoped to NATS), as long as the caller-facing contract — call `request()`, await a `response` — holds.
+
+This keeps the protocol's promise (RFC-000 Principle 3) intact: the *shape* of request-reply is specified, the *mechanics* of answering are not.
 
 ---
 
@@ -116,7 +123,7 @@ async def heartbeat(node_id: str, fabric: Fabric):
 
 ```python
 # Wrong — address-based
-node = fabric.get_node("192.168.1.42")
+node = fabric.get_node("node-id")
 
 # Correct — capability-based  
 node = await fabric.discover(capability="text.summarize")

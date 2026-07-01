@@ -1,0 +1,17 @@
+[Unit]
+Description=CAS Fabric Protocol Milestone 2 Auction Worker Reasoning
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/cas-fabric-protocol/reference/python
+Environment=CAS_WORKER_ID=worker-reasoning-m1
+Environment=CAS_WORKER_SKILLS=reasoning.llm
+Environment=CAS_WORKER_LATENCY_MS=250
+Environment=CAS_WORKER_LOAD=0.20
+ExecStart=%h/cas-fabric-protocol/.venv/bin/python %h/cas-fabric-protocol/reference/python/auction_worker_node_service.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

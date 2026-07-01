@@ -1,0 +1,13 @@
+[Unit]
+Description=CAS Fabric Protocol Milestone 2 Task Coordinator
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/cas-fabric-protocol/reference/python
+ExecStart=%h/cas-fabric-protocol/.venv/bin/python %h/cas-fabric-protocol/reference/python/task_coordinator_service.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
