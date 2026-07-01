@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cas-fabric-protocol/schemas/memory.schema.json",
+  "title": "MemoryRecord",
+  "description": "A Memory Fabric record suitable for passive query and active context.",
+  "type": "object",
+  "properties": {
+    "memory_id": { "type": "string" },
+    "memory_type": {
+      "type": "string",
+      "enum": ["working", "episodic", "semantic", "values"]
+    },
+    "content": { "type": "string" },
+    "source_node": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "metadata": { "type": "object" },
+    "values_signature": { "$ref": "message.schema.json#/properties/values_signature" }
+  },
+  "required": ["memory_id", "memory_type", "content"]
+}

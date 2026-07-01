@@ -42,7 +42,9 @@ Think of it as TCP/IP for cooperative intelligence.
 - Not a service mesh
 - Not tied to any language, model, or platform
 
-Reference implementations live in separate repositories. This repository contains only the specification.
+Reference implementations can live in separate repositories. This repository
+also contains a minimal Python reference runtime used to verify that the draft
+contracts are coherent.
 
 ---
 
@@ -105,13 +107,23 @@ cas-fabric-protocol/
 │   ├── RFC-002-memory-fabric.md
 │   ├── RFC-003-reasoning-interface.md
 │   ├── RFC-004-node-identity.md
-│   └── RFC-005-goal-system.md
+│   ├── RFC-005-goal-system.md
+│   └── RFC-006-skill-genome.md
 │
 ├── schemas/
 │   ├── node.schema.json
 │   ├── message.schema.json
 │   ├── capability.schema.json
-│   └── memory.schema.json
+│   ├── memory.schema.json
+│   └── goal.schema.json
+│
+├── reference/
+│   └── python/              ← minimal runtime canaries and services
+│
+├── deploy/
+│   └── systemd/user/        ← generic user-service templates
+│
+├── reports/                 ← generalized runtime verification reports
 │
 └── examples/
     ├── python/
@@ -130,8 +142,21 @@ cas-fabric-protocol/
 | RFC-002 | Memory Fabric | Draft |
 | RFC-003 | Reasoning Interface | Draft |
 | RFC-004 | Node Identity & Plasticity | Draft |
-| RFC-005 | Goal System | Stub |
+| RFC-005 | Goal System | Draft |
 | RFC-006 | Skill Genome | Draft |
+
+## Runtime Verification Status
+
+| Milestone | Focus | Status |
+|---|---|---|
+| M0 | Autonomic health over Fabric | Green |
+| M1 | Memory Fabric + RFC-003 Context Preparation | Green |
+| M2 | Task Auction | Green |
+| M3 | Values as Gravity | Green |
+| M4 | Skill Genome + Plasticity signal | Green |
+
+Reports are protocol-level evidence. They avoid private hostnames, IP
+addresses, hardware inventory, operator paths, and model preferences.
 
 ---
 

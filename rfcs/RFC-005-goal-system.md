@@ -4,14 +4,12 @@
 |---|---|
 | RFC | 005 |
 | Title | Goal System |
-| Status | Stub |
-| Version | 0.1 |
+| Status | Draft |
+| Version | 0.2 |
 
 ---
 
 ## Problem
-
-*To be written.*
 
 Modern AI systems wait. They respond to prompts and then go idle.
 
@@ -19,13 +17,44 @@ A cooperative intelligent system should be capable of maintaining persistent obj
 
 ---
 
-## Planned Scope
+## Specification
 
-- Goal schema and lifecycle (active, suspended, completed, failed)
-- How goals are stored in Memory Fabric
-- How goals influence routing and scheduling
-- Goal priority and conflict resolution
-- The relationship between goals and the Values Fabric
+### 1. Goal Object
+
+```json
+{
+  "goal_id": "string",
+  "intent": "string",
+  "required_skills": ["string"],
+  "priority": "low | medium | high",
+  "state": "created | broadcast | assigned | executing | completed | failed | suspended",
+  "created_at": "ISO8601",
+  "updated_at": "ISO8601",
+  "history": []
+}
+```
+
+### 2. Goal Lifecycle
+
+```
+created -> broadcast -> assigned -> executing -> completed
+                                      \-> failed
+created -> suspended
+```
+
+### 3. Goal Capabilities
+
+The reference capability surface is:
+
+```
+goal.create
+goal.status
+goal.update
+goal.submit
+goal.complete
+```
+
+`goal.submit` may create an implicit goal, or process an existing `goal_id`.
 
 ---
 
@@ -37,6 +66,18 @@ A goal is not a reasoning task. It is a persistent context that shapes what the 
 
 ---
 
+## CAS Test
+
+| Question | Answer |
+|---|---|
+| Is it local? | Yes — each node can inspect and act on goal state through Fabric capabilities |
+| Is it composable? | Yes — goals are ordinary Fabric-addressable objects |
+| Is it adaptive? | Yes — lifecycle state can change without changing the protocol |
+| Is it emergent? | Yes — execution emerges through Task Auction rather than central scripting |
+| Is it implementation-independent? | Yes — persistence can be memory, file, database, or another substrate |
+
+---
+
 ## Open Questions
 
 - Who can create goals? Any node, or only designated nodes?
@@ -45,5 +86,3 @@ A goal is not a reasoning task. It is a persistent context that shapes what the 
 - How does the system avoid goal proliferation?
 
 ---
-
-*This RFC is a stub. Contributions welcome.*

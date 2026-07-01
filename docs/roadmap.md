@@ -2,40 +2,47 @@
 
 ## Current State
 
-The protocol is in early draft. The foundation is being laid.
+The protocol is in draft, with a private reference runtime used to verify
+the coherence of the RFC contracts. Runtime reports in this repository are
+generalized and intentionally omit deployment-specific details.
 
 | RFC | Title | Status |
 |---|---|---|
 | RFC-000 | Design Philosophy & Constitution | Draft |
-| RFC-001 | Autonomic Layer | Draft |
-| RFC-002 | Memory Fabric | Draft |
-| RFC-003 | Reasoning Interface | Draft |
-| RFC-004 | Node Identity & Plasticity | Draft |
-| RFC-005 | Goal System | Stub
-| RFC-006 | Skill Genome | Draft | |
+| RFC-001 | Autonomic Layer | Draft / runtime verified |
+| RFC-002 | Memory Fabric | Draft / runtime verified |
+| RFC-003 | Reasoning Interface + Task Auction | Draft / runtime verified |
+| RFC-004 | Node Identity & Plasticity | Draft / partially runtime verified |
+| RFC-005 | Goal System | Draft |
+| RFC-006 | Skill Genome | Draft / partially runtime verified |
+
+## Verified Milestones
+
+| Milestone | Focus | Status |
+|---|---|---|
+| M0 | Autonomic health over Fabric | Green |
+| M1 | Memory Fabric + RFC-003 Context Preparation | Green |
+| M2 | Task Auction | Green |
+| M3 | Values as Gravity | Green |
+| M4 | Skill Genome + Plasticity signal | Green |
 
 ---
 
 ## Near Term
 
-**RFC-004 — Node Identity & Capability**  
-Define how nodes declare what they can do and how well they do it.
-
 **RFC-005 — Goal System**  
-Define persistent objectives that exist independently of prompts.
+Define persistent objectives that exist independently of one request.
 
 **JSON Schemas**  
 Formalize the message schemas referenced in the existing RFCs.
 
-**Reference Examples**  
-Minimal working examples in Python and TypeScript demonstrating the Memory Fabric interface.
+**Compliance Test Suite**  
+Turn the runtime canaries into a small implementation-independent compliance
+surface for M0-M5.
 
 ---
 
 ## Medium Term
-
-**RFC-006 — Scheduling**  
-Capability-aware task routing. Which node is most suitable — not just which is available.
 
 **RFC-007 — Reflection**  
 How the system evaluates its own performance and adjusts behavior without retraining.
