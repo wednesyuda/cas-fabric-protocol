@@ -175,6 +175,31 @@ The Coordinator node collects proposals within a defined window and selects the 
 
 The Coordinator is an **auctioneer** — it selects from what is offered. It does not design the solution. It does not micromanage execution. It assembles the best available combination of proposals.
 
+#### 5.3.1 Executor Skill Mapping
+
+An assignment names skills; it does not prescribe how a node maps those skills
+to concrete callables.
+
+For example, an assignment may contain:
+
+```json
+{
+  "skills_assigned": ["memory.query", "reasoning.llm"]
+}
+```
+
+The executing node is responsible for resolving each skill to a local executor,
+remote capability, model endpoint, tool adapter, or workflow. This mapping is an
+implementation boundary.
+
+A minimal reference implementation MAY use a small hardcoded mapping to prove
+the auction loop. A production implementation SHOULD expose a capability
+registry or executor registry so newly acquired skills can be mapped without
+editing coordinator code.
+
+If no executor mapping exists for a selected skill, the executor MUST report a
+structured failure for that skill. It MUST NOT silently skip the assignment.
+
 #### 5.4 No Permanent Coordinator
 
 Any node may act as Coordinator for a given goal. There is no permanently designated Coordinator node.
@@ -277,6 +302,8 @@ Assignment:
 - What is the appropriate proposal collection window before the Coordinator must decide?
 - Should the Risk Viewpoint be automatically included in every goal auction, or only for goals above a certain priority?
 - How should the system handle a goal that receives zero proposals?
+- What is the minimum portable shape of an executor registry?
+- Should executor mappings be published as Skill Genome metadata, node-local configuration, or both?
 
 ---
 

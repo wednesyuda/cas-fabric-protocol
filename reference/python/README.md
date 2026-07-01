@@ -91,3 +91,45 @@ This is a genuine mismatch between the protocol's abstract primitive and at leas
 ### Not yet verified
 
 This implementation has been checked against the real `nats-py` library's API surface (method signatures, connection behavior, request/reply semantics) and tested for graceful failure when no server is present. It has also been verified by runtime canaries against a private deployment; deployment-specific hardware details are intentionally not part of the protocol repository.
+
+---
+
+## Full Compliance Runner — `verify_compliance_runtime.py`
+
+The compliance runner is intentionally thin. It executes the milestone canaries
+in order and fails as soon as one canary fails:
+
+```bash
+python verify_compliance_runtime.py
+```
+
+It does not start infrastructure for you. Before running it, start exactly one
+message bus and compatible memory/model services for your environment.
+
+Common environment variables:
+
+```bash
+CAS_NATS_URL=nats://localhost:4222
+CAS_QDRANT_URL=http://localhost:6333
+CAS_OLLAMA_URL=http://localhost:11434
+CAS_GOAL_STORE_PATH=/tmp/cas-fabric-goals.json
+CAS_REFLECTION_STORE_PATH=/tmp/cas-fabric-reflections.json
+```
+
+`localhost` values are examples only. Public reports should describe service
+classes and verification status, not private addresses, hostnames, hardware, or
+operator paths.
+
+### Reference Implementation Boundaries
+
+The reference runtime deliberately keeps several production concerns simple:
+
+- Context preparation ships with seed Values policies so the Values Gravity
+  canary can run without an external governance service. RFC-002 requires
+  production Values Memory to be configurable and auditable.
+- The task coordinator maps a small set of demo skills to callables. RFC-003
+  treats executor mapping as an implementation boundary and recommends a
+  registry for production deployments.
+- Goal and reflection state can be stored in local JSON files. RFC-005
+  recommends routing durable production state through the Memory Fabric or an
+  equivalent auditable backing store.

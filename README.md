@@ -162,6 +162,40 @@ cas-fabric-protocol/
 Reports are protocol-level evidence. They avoid private hostnames, IP
 addresses, hardware inventory, operator paths, and model preferences.
 
+## Running the Reference Compliance Check
+
+The Python reference runtime expects three local service classes:
+
+- a NATS-compatible message bus
+- a vector store compatible with the Memory Fabric reference client
+- an embedding/generation provider compatible with the reference nodes
+
+Install Python dependencies:
+
+```bash
+cd reference/python
+python -m pip install -r requirements.txt
+```
+
+Start one message bus and the memory/model services for your environment, then
+run:
+
+```bash
+python verify_compliance_runtime.py
+```
+
+For convenience, compatible environments can also run:
+
+```bash
+make compliance
+```
+
+Environment variables such as `CAS_NATS_URL`, `CAS_QDRANT_URL`,
+`CAS_OLLAMA_URL`, `CAS_GOAL_STORE_PATH`, and `CAS_REFLECTION_STORE_PATH` may be
+used to point the reference runtime at local test services. Keep deployment
+addresses, hostnames, hardware inventory, and private model preferences out of
+public reports.
+
 ---
 
 ## Origin

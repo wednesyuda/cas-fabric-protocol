@@ -266,7 +266,7 @@ async def _demo() -> None:
     node = Node(
         fabric,  # <-- the only line that changed from the Milestone 0 demo
         identity=NodeIdentity(
-            hardware_class="dell-precision-5820-p2000",
+            hardware_class="generic-reference-node",
             cpu_cores=4,
             ram_gb=32.0,
             has_gpu=True,

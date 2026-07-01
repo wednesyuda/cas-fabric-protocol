@@ -160,6 +160,21 @@ Values Memory stores the system's ethical and philosophical principles as weight
 }
 ```
 
+#### 5.1.1 Runtime Configuration
+
+Values Memory MUST be configurable at runtime in production deployments.
+
+A reference implementation may ship with a small set of seed values so the
+system can boot, run canaries, and demonstrate the Values Gravity contract
+without requiring an external governance service. These seed values are
+defaults, not protocol law.
+
+Production implementations SHOULD allow governed write/update flows for Values
+Memory through the same Memory Fabric boundary used for other memory types. The
+protocol intentionally does not define a global authority for value updates; it
+only requires that values consulted during context preparation are explicit,
+auditable, and represented in the `values_signature`.
+
 #### 5.2 Ethical Gravity Function
 
 Every result returned by the Memory Fabric — whether from passive query or active broadcast — passes through the Ethical Gravity Function before delivery.
@@ -240,7 +255,8 @@ result = await fabric.memory.query({
 - Should Working Memory have a maximum capacity with automatic eviction, or is that implementation-defined?
 - How should the Memory Fabric handle conflicting memories — two episodic records that contradict each other?
 - Should the Tension Signal block node execution or remain advisory only?
-- Who writes to Values Memory, and can it be modified at runtime?
+- Who governs writes to Values Memory in multi-operator deployments?
+- What audit trail is sufficient for Values Memory updates?
 
 ---
 
