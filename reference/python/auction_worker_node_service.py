@@ -15,6 +15,7 @@ from fabric_nats import NATSFabric
 
 
 LOGGER = logging.getLogger("cas_fabric.auction_worker")
+PROTOCOL_VERSION = "cas-fabric.task-auction.v0.1"
 
 
 class AuctionWorker:
@@ -50,6 +51,7 @@ class AuctionWorker:
             proposal_subject,
             {
                 "type": "goal.proposal",
+                "protocol": PROTOCOL_VERSION,
                 "goal_id": payload.get("goal_id"),
                 "node_id": self.node_id,
                 "skills_offered": offered,

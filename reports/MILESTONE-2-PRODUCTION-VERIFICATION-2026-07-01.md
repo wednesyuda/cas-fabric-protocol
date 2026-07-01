@@ -27,7 +27,26 @@ The canary verified:
 - a goal was accepted,
 - multiple proposals were received,
 - assignments were produced,
-- assigned memory and reasoning capabilities executed through Fabric.
+- assigned memory and reasoning capabilities executed through Fabric,
+- the `goal.result` envelope was returned,
+- all required skills were assigned,
+- all assignment execution results returned `ok: true`.
+
+## Hardened Contract Checks
+
+The Milestone 2 reference runtime now validates the Task Auction path more
+strictly:
+
+- proposals must match the active goal,
+- proposals must include a node identifier,
+- proposed skills must intersect the required skill set,
+- low-confidence proposals are ignored,
+- duplicate proposals are ignored,
+- unassigned required skills are reported explicitly,
+- each assignment execution result carries `ok`, `error`, `skill`, `node_id`,
+  and `goal_id`,
+- the final goal result is `ok: true` only when every required skill is assigned
+  and every assigned execution succeeds.
 
 ## Protocol Implications
 

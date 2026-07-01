@@ -51,6 +51,14 @@ async def main() -> int:
         print("FAIL goal.submit=" + json.dumps(goal, sort_keys=True))
         await fabric.close()
         return 1
+    if goal.get("type") != "goal.result":
+        print("FAIL missing_goal_result_envelope=" + json.dumps(goal, sort_keys=True))
+        await fabric.close()
+        return 1
+    if goal.get("unassigned_skills"):
+        print("FAIL unassigned_skills=" + json.dumps(goal, sort_keys=True))
+        await fabric.close()
+        return 1
 
     assigned_skills = {
         skill
@@ -62,8 +70,17 @@ async def main() -> int:
         print("FAIL missing_assignments=" + json.dumps(goal, sort_keys=True))
         await fabric.close()
         return 1
+    if goal.get("valid_proposal_count", 0) < 2:
+        print("FAIL insufficient_valid_proposals=" + json.dumps(goal, sort_keys=True))
+        await fabric.close()
+        return 1
 
     execution = goal.get("execution", [])
+    failed_execution = [item for item in execution if not item.get("ok")]
+    if failed_execution:
+        print("FAIL assignment_execution=" + json.dumps(failed_execution, sort_keys=True))
+        await fabric.close()
+        return 1
     reasoning = next((item for item in execution if item.get("skill") == "reasoning.llm"), None)
     output = ((reasoning or {}).get("response") or {}).get("output", "")
     if not output:
@@ -78,8 +95,10 @@ async def main() -> int:
                 "token": TOKEN,
                 "goal_id": goal.get("goal_id"),
                 "proposal_count": goal.get("proposal_count"),
+                "valid_proposal_count": goal.get("valid_proposal_count"),
                 "assignment_count": len(goal.get("assignments", [])),
                 "assigned_skills": sorted(assigned_skills),
+                "execution_ok": all(item.get("ok") for item in execution),
                 "reasoning_output": output[:500],
             },
             sort_keys=True,
