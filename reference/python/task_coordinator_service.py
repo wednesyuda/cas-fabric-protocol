@@ -27,6 +27,7 @@ from skill_genome import retention_update
 LOGGER = logging.getLogger("cas_fabric.task_coordinator")
 PROTOCOL_VERSION = "cas-fabric.task-auction.v0.1"
 GOAL_PROTOCOL_VERSION = "cas-fabric.goal-system.v0.1"
+REFLECTION_PROTOCOL_VERSION = "cas-fabric.reflection.v0.1"
 
 
 def now_iso() -> str:
@@ -90,18 +91,90 @@ class GoalStore:
         return goal
 
 
+class ReflectionStore:
+    def __init__(self, path: str | None = None) -> None:
+        self.path = Path(path or os.getenv("CAS_REFLECTION_STORE_PATH", "/tmp/cas-fabric-reflections.json"))
+        self.skills: dict[str, dict[str, Any]] = {}
+
+    def load(self) -> None:
+        if self.path.exists():
+            self.skills = json.loads(self.path.read_text(encoding="utf-8"))
+
+    def save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(self.skills, indent=2, sort_keys=True), encoding="utf-8")
+
+    def status(self, skill_id: str) -> dict[str, Any]:
+        return self.skills.get(
+            skill_id,
+            {
+                "type": "skill.reflection_status",
+                "protocol": REFLECTION_PROTOCOL_VERSION,
+                "skill_id": skill_id,
+                "attempt_count": 0,
+                "success_count": 0,
+                "failure_count": 0,
+                "adaptive_confidence": 0.5,
+                "last_goal_id": None,
+                "last_outcome": None,
+                "lifecycle_recommendation": "observe",
+            },
+        )
+
+    def record_execution(self, goal_id: str, execution: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        events: list[dict[str, Any]] = []
+        for item in execution:
+            skill_id = str(item.get("skill", ""))
+            if not skill_id:
+                continue
+            current = self.status(skill_id)
+            success = bool(item.get("ok"))
+            previous = float(current.get("adaptive_confidence", 0.5))
+            delta = 0.05 if success else -0.10
+            updated = min(1.0, max(0.0, previous + delta))
+            status = {
+                **current,
+                "attempt_count": int(current.get("attempt_count", 0)) + 1,
+                "success_count": int(current.get("success_count", 0)) + (1 if success else 0),
+                "failure_count": int(current.get("failure_count", 0)) + (0 if success else 1),
+                "adaptive_confidence": round(updated, 3),
+                "last_goal_id": goal_id,
+                "last_outcome": "success" if success else "failure",
+                "lifecycle_recommendation": "prefer" if updated >= 0.6 else "observe" if updated >= 0.3 else "deprioritize",
+            }
+            self.skills[skill_id] = status
+            events.append(
+                {
+                    "type": "reflection.event",
+                    "protocol": REFLECTION_PROTOCOL_VERSION,
+                    "goal_id": goal_id,
+                    "skill_id": skill_id,
+                    "success": success,
+                    "previous_adaptive_confidence": previous,
+                    "confidence_delta": delta,
+                    "adaptive_confidence": status["adaptive_confidence"],
+                    "lifecycle_recommendation": status["lifecycle_recommendation"],
+                }
+            )
+        self.save()
+        return events
+
+
 class TaskCoordinator:
     def __init__(self) -> None:
         self.fabric = NATSFabric()
         self.goals = GoalStore()
+        self.reflections = ReflectionStore()
 
     async def start(self) -> None:
         self.goals.load()
+        self.reflections.load()
         await self.fabric.connect()
         await self.fabric.subscribe_async("capability.goal.create", self.handle_goal_create)
         await self.fabric.subscribe_async("capability.goal.status", self.handle_goal_status)
         await self.fabric.subscribe_async("capability.goal.update", self.handle_goal_update)
         await self.fabric.subscribe_async("capability.goal.complete", self.handle_goal_complete)
+        await self.fabric.subscribe_async("capability.reflection.status", self.handle_reflection_status)
         await self.fabric.subscribe_async("capability.goal.submit", self.handle_goal)
         LOGGER.info("Task coordinator ready: capability=goal.submit")
 
@@ -167,6 +240,17 @@ class TaskCoordinator:
         if respond:
             await respond(result)
 
+    async def handle_reflection_status(self, message: dict) -> None:
+        respond = message.get("respond")
+        payload = message.get("payload", {})
+        try:
+            skill_id = str(payload["skill_id"])
+            result = {"ok": True, "reflection": self.reflections.status(skill_id)}
+        except Exception as exc:
+            result = {"ok": False, "error": str(exc)}
+        if respond:
+            await respond(result)
+
     async def handle_goal(self, message: dict) -> None:
         respond = message.get("respond")
         payload = message.get("payload", {})
@@ -217,6 +301,12 @@ class TaskCoordinator:
 
             await asyncio.sleep(float(payload.get("proposal_window_ms", 1000)) / 1000.0)
             valid_proposals = self.validate_proposals(goal_id, required_skills, proposals)
+            for proposal in valid_proposals:
+                scores = [
+                    float(self.reflections.status(skill).get("adaptive_confidence", 0.5))
+                    for skill in proposal.get("skills_offered", [])
+                ]
+                proposal["adaptive_confidence"] = round(sum(scores) / len(scores), 3) if scores else 0.5
             assignments = self.resolve_assignments(goal_id, required_skills, valid_proposals)
             self.goals.transition(goal_id, "assigned", assignment_count=len(assignments))
 
@@ -232,6 +322,7 @@ class TaskCoordinator:
 
             self.goals.transition(goal_id, "executing")
             execution = await self.execute_assignments(intent, assignments)
+            reflection_events = self.reflections.record_execution(goal_id, execution)
             assigned_skills = {
                 skill
                 for assignment in assignments
@@ -251,6 +342,7 @@ class TaskCoordinator:
                 "assignments": assignments,
                 "unassigned_skills": unassigned_skills,
                 "execution": execution,
+                "reflection_events": reflection_events,
             }
             final_state = "completed" if result["ok"] else "failed"
             result["goal"] = self.goals.transition(goal_id, final_state, result_summary={
@@ -259,6 +351,7 @@ class TaskCoordinator:
                 "assignment_count": len(assignments),
                 "execution_ok": execution_ok,
                 "unassigned_skills": unassigned_skills,
+                "reflection_event_count": len(reflection_events),
             })
         except Exception as exc:
             LOGGER.exception("goal.submit failed")
@@ -344,6 +437,7 @@ class TaskCoordinator:
         ranked = sorted(
             proposals,
             key=lambda p: (
+                -float(p.get("adaptive_confidence", p.get("confidence", 0.0))),
                 float(p.get("current_load", 1.0)),
                 int(p.get("estimated_latency_ms", 999999)),
                 str(p.get("node_id", "")),
