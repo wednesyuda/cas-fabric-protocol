@@ -12,6 +12,7 @@ import os
 import signal
 
 from fabric_nats import NATSFabric
+from skill_genome import manifests_for_skills
 
 
 LOGGER = logging.getLogger("cas_fabric.auction_worker")
@@ -29,6 +30,7 @@ class AuctionWorker:
         ]
         self.estimated_latency_ms = int(os.environ.get("CAS_WORKER_LATENCY_MS", "100"))
         self.current_load = float(os.environ.get("CAS_WORKER_LOAD", "0.1"))
+        self.skill_manifests = manifests_for_skills(self.skills)
 
     async def start(self) -> None:
         if not self.skills:
@@ -44,6 +46,10 @@ class AuctionWorker:
         offered = sorted(required & set(self.skills))
         if not offered:
             return
+        offered_manifests = [
+            manifest for manifest in self.skill_manifests
+            if manifest.get("skill_id") in offered
+        ]
         proposal_subject = payload.get("proposal_subject")
         if not proposal_subject:
             return
@@ -55,6 +61,7 @@ class AuctionWorker:
                 "goal_id": payload.get("goal_id"),
                 "node_id": self.node_id,
                 "skills_offered": offered,
+                "skill_manifests": offered_manifests,
                 "estimated_latency_ms": self.estimated_latency_ms,
                 "estimated_energy_cost": 0.1,
                 "current_load": self.current_load,

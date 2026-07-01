@@ -18,6 +18,7 @@ import uuid
 from typing import Any
 
 from fabric_nats import NATSFabric
+from skill_genome import retention_update
 
 
 LOGGER = logging.getLogger("cas_fabric.task_coordinator")
@@ -140,6 +141,10 @@ class TaskCoordinator:
                     "goal_id": goal_id,
                     "node_id": node_id,
                     "skills_offered": offered,
+                    "skill_manifests": TaskCoordinator.select_skill_manifests(
+                        offered,
+                        proposal.get("skill_manifests", []),
+                    ),
                     "estimated_latency_ms": int(proposal.get("estimated_latency_ms", 999999)),
                     "estimated_energy_cost": float(proposal.get("estimated_energy_cost", 1.0)),
                     "current_load": float(proposal.get("current_load", 1.0)),
@@ -147,6 +152,28 @@ class TaskCoordinator:
                 }
             )
         return valid
+
+    @staticmethod
+    def select_skill_manifests(
+        offered_skills: list[str],
+        manifests: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        by_skill = {
+            str(manifest.get("skill_id")): manifest
+            for manifest in manifests
+            if manifest.get("type") == "skill.manifest" and manifest.get("skill_id")
+        }
+        selected: list[dict[str, Any]] = []
+        for skill in offered_skills:
+            manifest = by_skill.get(skill)
+            if not manifest:
+                continue
+            if manifest.get("capability") != skill:
+                continue
+            if "retention_hints" not in manifest:
+                continue
+            selected.append(manifest)
+        return selected
 
     @staticmethod
     def resolve_assignments(
@@ -169,6 +196,10 @@ class TaskCoordinator:
             selected = sorted(remaining & offered)
             if not selected:
                 continue
+            manifests = [
+                manifest for manifest in proposal.get("skill_manifests", [])
+                if manifest.get("skill_id") in selected
+            ]
             assignments.append(
                 {
                     "goal_id": goal_id,
@@ -176,6 +207,7 @@ class TaskCoordinator:
                     "protocol": PROTOCOL_VERSION,
                     "node_id": proposal.get("node_id"),
                     "skills_assigned": selected,
+                    "skill_manifests": manifests,
                     "execution_order": len(assignments),
                     "dependencies": [],
                     "confidence": proposal.get("confidence", 0.0),
@@ -189,6 +221,10 @@ class TaskCoordinator:
     async def execute_assignments(self, intent: str, assignments: list[dict[str, Any]]) -> list[dict]:
         results: list[dict] = []
         for assignment in assignments:
+            manifests = {
+                manifest.get("skill_id"): manifest
+                for manifest in assignment.get("skill_manifests", [])
+            }
             for skill in assignment.get("skills_assigned", []):
                 timeout = 180 if skill == "reasoning.llm" else 30
                 try:
@@ -221,6 +257,7 @@ class TaskCoordinator:
                         "skill": skill,
                         "ok": ok,
                         "error": error,
+                        "retention_update": retention_update(manifests.get(skill, {"skill_id": skill}), ok),
                         "response": response,
                     }
                 )
