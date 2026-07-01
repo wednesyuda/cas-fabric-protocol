@@ -25,20 +25,18 @@ generalized and intentionally omit deployment-specific details.
 | M2 | Task Auction | Green |
 | M3 | Values as Gravity | Green |
 | M4 | Skill Genome + Plasticity signal | Green |
+| M4.5 | Spec and schema alignment | Green |
+| M5 | Goal System | Green |
+| M6 | Reflection / Adaptive Scoring | Green |
+| M7 | Compliance runner + seed stabilization | Green |
 
 ---
 
 ## Near Term
 
-**RFC-005 — Goal System**  
-Define persistent objectives that exist independently of one request.
-
-**JSON Schemas**  
-Formalize the message schemas referenced in the existing RFCs.
-
 **Compliance Test Suite**  
-Turn the runtime canaries into a small implementation-independent compliance
-surface for M0-M5.
+Expand the runtime compliance runner into an implementation-independent
+test suite that other language implementations can reuse.
 
 ---
 

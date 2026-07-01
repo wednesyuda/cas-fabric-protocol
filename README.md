@@ -154,6 +154,10 @@ cas-fabric-protocol/
 | M2 | Task Auction | Green |
 | M3 | Values as Gravity | Green |
 | M4 | Skill Genome + Plasticity signal | Green |
+| M4.5 | Spec and schema alignment | Green |
+| M5 | Goal System | Green |
+| M6 | Reflection / Adaptive Scoring | Green |
+| M7 | Compliance runner + seed stabilization | Green |
 
 Reports are protocol-level evidence. They avoid private hostnames, IP
 addresses, hardware inventory, operator paths, and model preferences.
