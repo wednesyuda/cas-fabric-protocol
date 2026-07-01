@@ -69,7 +69,7 @@ async def main() -> int:
 
     prepared = await fabric.request(
         "reasoning.prepare_context",
-        {"intent": f"What does {TOKEN} prove?", "memory_limit": 5},
+        {"intent": f"What does {TOKEN} prove?", "memory_limit": 20},
         timeout=60,
     )
     envelope = (prepared or {}).get("reasoning_request", {})
