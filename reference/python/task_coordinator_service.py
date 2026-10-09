@@ -11,10 +11,12 @@ Implements the first minimal Task Auction:
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import logging
 import os
 import signal
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,6 +36,33 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def save_json(path: Path, data: dict) -> None:
+    """Commit one store snapshot atomically; one coordinator owns each file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         delete=False) as stream:
+            temp_path = Path(stream.name)
+            json.dump(data, stream, indent=2, sort_keys=True)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def validate_goal_fields(intent, required_skills, priority) -> None:
+    if not isinstance(intent, str) or not intent.strip():
+        raise ValueError("intent must be a non-empty string")
+    if (not isinstance(required_skills, list) or not required_skills or
+            any(not isinstance(skill, str) or not skill.strip() for skill in required_skills)):
+        raise ValueError("required_skills must be a non-empty list of strings")
+    if priority not in ("low", "medium", "high"):
+        raise ValueError("priority must be low, medium, or high")
+
+
 class GoalStore:
     def __init__(self, path: str | None = None) -> None:
         self.path = Path(path or os.getenv("CAS_GOAL_STORE_PATH", "/tmp/cas-fabric-goals.json"))
@@ -44,10 +73,22 @@ class GoalStore:
             self.goals = json.loads(self.path.read_text(encoding="utf-8"))
 
     def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self.goals, indent=2, sort_keys=True), encoding="utf-8")
+        save_json(self.path, self.goals)
+
+    def recover_inflight(self) -> None:
+        """Do not replay potentially completed external work after restart."""
+        for goal_id, goal in list(self.goals.items()):
+            if goal["state"] in ("broadcast", "assigned", "executing"):
+                self.transition(goal_id, "failed", reason="coordinator_restart")
+
+    def _commit(self, goal_id: str, goal: dict) -> dict:
+        goals = {**self.goals, goal_id: goal}
+        save_json(self.path, goals)
+        self.goals = goals
+        return copy.deepcopy(goal)
 
     def create(self, intent: str, required_skills: list[str], priority: str = "medium") -> dict[str, Any]:
+        validate_goal_fields(intent, required_skills, priority)
         goal_id = str(uuid.uuid4())
         timestamp = now_iso()
         goal = {
@@ -55,40 +96,56 @@ class GoalStore:
             "protocol": GOAL_PROTOCOL_VERSION,
             "goal_id": goal_id,
             "intent": intent,
-            "required_skills": required_skills,
+            "required_skills": list(required_skills),
             "priority": priority,
             "state": "created",
             "created_at": timestamp,
             "updated_at": timestamp,
             "history": [{"state": "created", "timestamp": timestamp}],
         }
-        self.goals[goal_id] = goal
-        self.save()
-        return goal
+        return self._commit(goal_id, goal)
 
     def get(self, goal_id: str) -> dict[str, Any] | None:
-        return self.goals.get(goal_id)
+        return copy.deepcopy(self.goals.get(goal_id))
 
     def transition(self, goal_id: str, state: str, **metadata: Any) -> dict[str, Any]:
-        goal = self.goals[goal_id]
+        return self.update(goal_id, {"state": state}, **metadata)
+
+    def update(self, goal_id: str, patch: dict[str, Any], **metadata: Any) -> dict[str, Any]:
+        if not isinstance(patch, dict):
+            raise ValueError("patch must be an object")
+        goal = copy.deepcopy(self.goals[goal_id])
+        state = patch.get("state", goal["state"])
+        allowed = {
+            "created": {"broadcast", "suspended", "completed", "failed"},
+            "broadcast": {"assigned", "failed"},
+            "assigned": {"executing", "failed"},
+            "executing": {"completed", "failed"},
+            "completed": set(), "failed": set(), "suspended": set(),
+        }
+        if goal["state"] in ("completed", "failed", "suspended"):
+            raise ValueError("terminal goal is immutable")
+        if state != goal["state"] and state not in allowed[goal["state"]]:
+            raise ValueError(f"invalid transition: {goal['state']} -> {state}")
+        if goal["state"] != "created" and any(
+                key in patch for key in ("intent", "required_skills", "priority")):
+            raise ValueError("execution fields may only be edited while goal is created")
+        for key in ("intent", "required_skills", "priority"):
+            if key in patch:
+                goal[key] = copy.deepcopy(patch[key])
+        validate_goal_fields(goal["intent"], goal["required_skills"], goal["priority"])
         timestamp = now_iso()
         goal["state"] = state
         goal["updated_at"] = timestamp
         event = {"state": state, "timestamp": timestamp}
-        if metadata:
-            event["metadata"] = metadata
-            goal.setdefault("metadata", {}).update(metadata)
+        event_metadata = copy.deepcopy(metadata)
+        if any(key != "state" for key in patch):
+            event_metadata["patch"] = copy.deepcopy(patch)
+        if event_metadata:
+            event["metadata"] = event_metadata
+            goal.setdefault("metadata", {}).update(event_metadata)
         goal.setdefault("history", []).append(event)
-        self.save()
-        return goal
-
-    def update(self, goal_id: str, patch: dict[str, Any]) -> dict[str, Any]:
-        goal = self.goals[goal_id]
-        for key in ("intent", "required_skills", "priority"):
-            if key in patch:
-                goal[key] = patch[key]
-        self.transition(goal_id, str(patch.get("state", goal["state"])), patch=patch)
-        return goal
+        return self._commit(goal_id, goal)
 
 
 class ReflectionStore:
@@ -101,8 +158,7 @@ class ReflectionStore:
             self.skills = json.loads(self.path.read_text(encoding="utf-8"))
 
     def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self.skills, indent=2, sort_keys=True), encoding="utf-8")
+        save_json(self.path, self.skills)
 
     def status(self, skill_id: str) -> dict[str, Any]:
         return self.skills.get(
@@ -123,11 +179,12 @@ class ReflectionStore:
 
     def record_execution(self, goal_id: str, execution: list[dict[str, Any]]) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
+        skills = copy.deepcopy(self.skills)
         for item in execution:
             skill_id = str(item.get("skill", ""))
             if not skill_id:
                 continue
-            current = self.status(skill_id)
+            current = skills.get(skill_id, self.status(skill_id))
             success = bool(item.get("ok"))
             previous = float(current.get("adaptive_confidence", 0.5))
             delta = 0.05 if success else -0.10
@@ -142,7 +199,7 @@ class ReflectionStore:
                 "last_outcome": "success" if success else "failure",
                 "lifecycle_recommendation": "prefer" if updated >= 0.6 else "observe" if updated >= 0.3 else "deprioritize",
             }
-            self.skills[skill_id] = status
+            skills[skill_id] = status
             events.append(
                 {
                     "type": "reflection.event",
@@ -156,7 +213,8 @@ class ReflectionStore:
                     "lifecycle_recommendation": status["lifecycle_recommendation"],
                 }
             )
-        self.save()
+        save_json(self.path, skills)
+        self.skills = skills
         return events
 
 
@@ -168,6 +226,7 @@ class TaskCoordinator:
 
     async def start(self) -> None:
         self.goals.load()
+        self.goals.recover_inflight()
         self.reflections.load()
         await self.fabric.connect()
         await self.fabric.subscribe_async("capability.goal.create", self.handle_goal_create)
@@ -182,8 +241,8 @@ class TaskCoordinator:
         respond = message.get("respond")
         payload = message.get("payload", {})
         try:
-            intent = str(payload["intent"]).strip()
-            required_skills = [str(s) for s in payload.get("required_skills", [])]
+            intent = payload["intent"]
+            required_skills = payload.get("required_skills", [])
             if not intent:
                 raise ValueError("intent must not be empty")
             if not required_skills:
@@ -254,6 +313,9 @@ class TaskCoordinator:
     async def handle_goal(self, message: dict) -> None:
         respond = message.get("respond")
         payload = message.get("payload", {})
+        goal_id = ""
+        subscription = None
+        started = False
         try:
             goal_id = str(payload.get("goal_id") or "")
             if goal_id:
@@ -264,8 +326,8 @@ class TaskCoordinator:
                 required_skills = [str(s) for s in goal.get("required_skills", [])]
                 priority = str(goal.get("priority", payload.get("priority", "medium")))
             else:
-                intent = str(payload["intent"]).strip()
-                required_skills = [str(s) for s in payload.get("required_skills", [])]
+                intent = payload["intent"]
+                required_skills = payload.get("required_skills", [])
                 if not intent:
                     raise ValueError("intent must not be empty")
                 if not required_skills:
@@ -277,10 +339,17 @@ class TaskCoordinator:
                 raise ValueError("intent must not be empty")
             if not required_skills:
                 raise ValueError("required_skills must not be empty")
+            if goal["state"] != "created":
+                raise ValueError("only created goals may be submitted")
+            window = float(payload.get("proposal_window_ms", 1000))
+            if not 0 <= window <= 30000:
+                raise ValueError("proposal_window_ms must be between 0 and 30000")
+            self.goals.transition(goal_id, "broadcast")
+            started = True
             proposal_subject = f"goal.proposal.{goal_id}"
             proposals: list[dict[str, Any]] = []
 
-            await self.fabric.subscribe_async(
+            subscription = await self.fabric.subscribe_async(
                 proposal_subject,
                 lambda msg: proposals.append(msg["payload"]),
             )
@@ -297,9 +366,10 @@ class TaskCoordinator:
                     "proposal_subject": proposal_subject,
                 },
             )
-            self.goals.transition(goal_id, "broadcast")
-
-            await asyncio.sleep(float(payload.get("proposal_window_ms", 1000)) / 1000.0)
+            await asyncio.sleep(window / 1000.0)
+            closed_subscription = subscription
+            subscription = None
+            await closed_subscription.unsubscribe()
             valid_proposals = self.validate_proposals(goal_id, required_skills, proposals)
             for proposal in valid_proposals:
                 scores = [
@@ -316,6 +386,7 @@ class TaskCoordinator:
                     {
                         "type": "goal.assignment",
                         "goal_id": goal_id,
+                        "intent": intent,
                         "assignment": assignment,
                     },
                 )
@@ -356,6 +427,18 @@ class TaskCoordinator:
         except Exception as exc:
             LOGGER.exception("goal.submit failed")
             result = {"ok": False, "error": str(exc)}
+            if started:
+                current = self.goals.get(goal_id)
+                if current["state"] in ("completed", "failed", "suspended"):
+                    result["goal"] = current
+                else:
+                    result["goal"] = self.goals.transition(goal_id, "failed", error=str(exc))
+        finally:
+            if subscription is not None:
+                try:
+                    await subscription.unsubscribe()
+                except Exception:
+                    LOGGER.exception("proposal subscription cleanup failed")
 
         if respond:
             await respond(result)
@@ -391,6 +474,7 @@ class TaskCoordinator:
                     "protocol": str(proposal.get("protocol", PROTOCOL_VERSION)),
                     "goal_id": goal_id,
                     "node_id": node_id,
+                    "execution_capability": proposal.get("execution_capability"),
                     "skills_offered": offered,
                     "skill_manifests": TaskCoordinator.select_skill_manifests(
                         offered,
@@ -458,6 +542,7 @@ class TaskCoordinator:
                     "type": "goal.assignment",
                     "protocol": PROTOCOL_VERSION,
                     "node_id": proposal.get("node_id"),
+                    "execution_capability": proposal.get("execution_capability"),
                     "skills_assigned": selected,
                     "skill_manifests": manifests,
                     "execution_order": len(assignments),
@@ -479,17 +564,23 @@ class TaskCoordinator:
             }
             for skill in assignment.get("skills_assigned", []):
                 timeout = 180 if skill == "reasoning.llm" else 30
+                response = None
                 try:
-                    if skill == "memory.query":
-                        response = await self.fabric.request("memory.query", {"query": intent, "limit": 3}, timeout=timeout)
-                    elif skill == "reasoning.llm":
-                        response = await self.fabric.request(
-                            "reasoning.llm",
-                            {"intent": intent, "memory_limit": 3},
-                            timeout=timeout,
-                        )
-                    else:
-                        response = {"ok": False, "error": f"no executor mapping for skill {skill}"}
+                    route = assignment.get("execution_capability")
+                    if not isinstance(route, str) or not route.startswith("auction.execute."):
+                        raise ValueError("assignment missing worker execution capability")
+                    worker_result = await self.fabric.request(route, {
+                        "goal_id": assignment.get("goal_id"), "node_id": assignment.get("node_id"),
+                        "skill": skill, "intent": intent}, timeout=timeout + 5)
+                    if not isinstance(worker_result, dict):
+                        raise RuntimeError("assigned worker unavailable or timed out")
+                    if any(worker_result.get(key) != value for key, value in (
+                            ("node_id", assignment.get("node_id")), ("goal_id", assignment.get("goal_id")),
+                            ("skill", skill))):
+                        raise ValueError("worker result identity does not match assignment")
+                    response = worker_result.get("response")
+                    if worker_result.get("ok") is not True:
+                        raise RuntimeError(worker_result.get("error", "worker execution failed"))
                     ok = bool(response and response.get("ok"))
                     error = None if ok else str((response or {}).get("error", "skill returned non-ok response"))
                 except asyncio.TimeoutError:

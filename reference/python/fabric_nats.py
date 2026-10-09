@@ -30,12 +30,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from typing import Any, Callable, Optional
 
 import nats
 from nats.aio.client import Client as NATSClient
 from nats.aio.msg import Msg
-from nats.errors import TimeoutError as NATSTimeoutError
+from nats.aio.subscription import Subscription
+from nats.errors import NoRespondersError, TimeoutError as NATSTimeoutError
 
 logger = logging.getLogger("cas_fabric.nats")
 
@@ -83,8 +85,8 @@ class NATSFabric:
         later without touching RFC text.
     """
 
-    def __init__(self, servers: str | list[str] = "nats://localhost:4222") -> None:
-        self._servers = servers
+    def __init__(self, servers: str | list[str] | None = None) -> None:
+        self._servers = servers if servers is not None else os.getenv("CAS_NATS_URL", "nats://localhost:4222")
         self._nc: Optional[NATSClient] = None
         self._subscriptions: list = []
         self._closing = False
@@ -154,21 +156,23 @@ class NATSFabric:
         """
         asyncio.create_task(self._subscribe_async(topic, handler))
 
-    async def subscribe_async(self, topic: str, handler: Callable[[dict], Any]) -> None:
+    async def subscribe_async(self, topic: str, handler: Callable[[dict], Any]) -> Subscription:
         """Same as subscribe(), but awaitable — guarantees subscription
         is active before returning. Prefer this in new code; subscribe()
         exists for drop-in compatibility with the in-memory Fabric's
         synchronous signature."""
-        await self._subscribe_async(topic, handler)
+        return await self._subscribe_async(topic, handler)
 
-    async def _subscribe_async(self, topic: str, handler: Callable[[dict], Any]) -> None:
+    async def _subscribe_async(self, topic: str, handler: Callable[[dict], Any]) -> Subscription:
         if self._nc is None:
             raise RuntimeError("NATSFabric.connect() must be called first")
 
         async def _on_message(msg: Msg) -> None:
             try:
                 data = json.loads(msg.data.decode("utf-8"))
-            except json.JSONDecodeError:
+                if not isinstance(data, dict):
+                    raise ValueError("message must be a JSON object")
+            except (UnicodeDecodeError, ValueError):
                 logger.warning(f"Dropped malformed message on '{topic}'")
                 return
 
@@ -183,7 +187,8 @@ class NATSFabric:
                 await result
 
         sub = await self._nc.subscribe(topic, cb=_on_message)
-        self._subscriptions.append(sub)
+        # The NATS client owns subscriptions; do not retain expired auction handles.
+        return sub
 
     async def request(
         self, capability: str, payload: dict, timeout: float = 5.0
@@ -207,7 +212,7 @@ class NATSFabric:
         try:
             response: Msg = await self._nc.request(subject, data, timeout=timeout)
             return json.loads(response.data.decode("utf-8"))
-        except NATSTimeoutError:
+        except (NATSTimeoutError, NoRespondersError):
             return None
 
     # ── connection lifecycle callbacks ──────────────────────────

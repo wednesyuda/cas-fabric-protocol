@@ -82,6 +82,8 @@ class ReasoningNode:
 
             if not prepared or not prepared.get("values_signature", {}).get("values_consulted"):
                 raise RuntimeError("reasoning.request missing values_signature")
+            if prepared.get("intent") != intent:
+                raise ValueError("reasoning.request intent does not match request intent")
 
             prepared_context = prepared.get("prepared_context", {})
             relevant_semantic = prepared_context.get("relevant_semantic", [])
@@ -100,7 +102,9 @@ class ReasoningNode:
                 f"Intent:\n{intent}\n\n"
                 "Answer:"
             )
-            output = ollama_generate(prompt)
+            output = await asyncio.to_thread(ollama_generate, prompt)
+            if not output:
+                raise RuntimeError("model returned empty output")
             result = {
                 "ok": True,
                 "model": MODEL,

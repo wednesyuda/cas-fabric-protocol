@@ -1,0 +1,30 @@
+name: Reference release checks
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  reference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r reference/python/requirements.lock -r requirements-dev.txt
+      - run: make check
+      - run: python -m pip_audit -r reference/python/requirements.lock --no-deps --disable-pip --format json --output dependency-audit.json
+      - run: python scripts/verify_release.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: reference-release-evidence
+          path: |
+            coverage.json
+            test-results.xml
+            dependency-audit.json
+            release-evidence/*/source-manifest.json
+            release-evidence/*/provider-manifest.json
+            release-evidence/*/summary.json
+            release-evidence/*/compliance.log
+          retention-days: 30

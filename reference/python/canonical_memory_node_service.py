@@ -103,7 +103,7 @@ class CanonicalMemoryNode:
                     MemoryType(mt)
                     for mt in payload.get("memory_types", [payload.get("memory_type", "semantic")])
                 ],
-                limit=int(payload.get("limit", 10)),
+                limit=payload.get("limit", 10),
                 node_id=str(payload.get("node_id", "canonical-memory-client")),
                 include_values_context=bool(payload.get("include_values_context", True)),
             )
