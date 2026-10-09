@@ -10,7 +10,7 @@ Per RFC-000 Principle 3 (define contracts, never implementations), nothing here 
 
 **Implements:**
 - RFC-001 §2.1 — Health Pulse
-- RFC-001 §4 — Four fabric primitives (`publish`, `subscribe`, `request`, `reply`), backed by an in-memory fabric
+- RFC-001 §4 — Three fabric primitives (`publish`, `subscribe`, `request`), backed by an in-memory fabric; handlers answer via a `respond` callback
 - RFC-004 §1 — Node Identity (stable)
 - RFC-004 §3 — Skill Lifecycle (`AVAILABLE → LOADING → ACTIVE → RELEASING`)
 - RFC-004 §4 — Retention Score and automatic skill release ("forgetting as adaptation")
@@ -80,13 +80,12 @@ Fix: wrap the initial `nats.connect()` call in `asyncio.wait_for()` with an expl
 
 This is left in the code as a comment and in this README because it's a useful warning for anyone else building NATS-backed Autonomic Layer code: **"retry forever" and "fail fast on first attempt" are not automatically compatible settings** — you may need to enforce the boundary yourself.
 
-### Known open question this implementation surfaced
+### Request responses
 
-`NATSFabric.reply()` raises `NotImplementedError`. This is intentional, not a TODO.
-
-RFC-001 §4 defines `reply(request_id, payload)` modeled on a pattern where you look up a pending request by ID later. NATS's native request-reply doesn't work that way — you respond via `msg.respond()` *inside the handler that received the request*, using a reply-subject NATS sets up automatically. There's no "look up request_id later" step in idiomatic NATS usage.
-
-This is a genuine mismatch between the protocol's abstract primitive and at least one real transport's idiom. It's filed as an open question against RFC-001 in `fabric_nats.py`'s closing comment block, per `CONTRIBUTING.md`: *"Open Questions exist for a reason — use it."* A `respond_to_request()` static method is provided as the NATS-idiomatic workaround in the meantime.
+RFC-001 §4 v0.2 uses three primitives. A request handler receives a `respond`
+callback; the NATS-backed callback is awaitable. There is no standalone `reply`
+method. `subscribe_async` returns a NATS subscription handle which its owner may
+unsubscribe when temporary work ends.
 
 ### Not yet verified
 
@@ -95,6 +94,9 @@ This implementation has been checked against the real `nats-py` library's API su
 ---
 
 ## Full Compliance Runner — `verify_compliance_runtime.py`
+
+See [release readiness](../../docs/release-readiness.md) for the isolated test gate,
+beta scope, persistence/recovery policies and stable-release limitations.
 
 The compliance runner is intentionally thin. It executes the milestone canaries
 in order and fails as soon as one canary fails:

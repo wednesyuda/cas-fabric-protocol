@@ -4,3 +4,9 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+coverage.json
+dependency-audit.json
+release-evidence/
+candidate-manifest.json
+test-results.xml

@@ -56,6 +56,10 @@ class QueryRequest:
     node_id: str = ""
     include_values_context: bool = True
 
+    def __post_init__(self) -> None:
+        if type(self.limit) is not int or not 1 <= self.limit <= 100:
+            raise ValueError("limit must be an integer between 1 and 100")
+
 
 @dataclass
 class QueryResult:

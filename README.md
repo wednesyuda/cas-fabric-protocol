@@ -164,6 +164,9 @@ addresses, hardware inventory, operator paths, and model preferences.
 
 ## Running the Reference Compliance Check
 
+For the tested beta reference candidate, reproducible release gates, recovery
+policies and deployment limits, see [Release readiness](docs/release-readiness.md).
+
 The Python reference runtime expects three local service classes:
 
 - a NATS-compatible message bus
@@ -174,7 +177,7 @@ Install Python dependencies:
 
 ```bash
 cd reference/python
-python -m pip install -r requirements.txt
+python -m pip install -r requirements.lock
 ```
 
 Start one message bus and the memory/model services for your environment, then

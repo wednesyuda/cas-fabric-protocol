@@ -1,7 +1,18 @@
 PYTHON ?= python
 PYREF := reference/python
 
-.PHONY: compile schemas compliance
+.PHONY: compile schemas compliance check test lint release-check
+
+lint:
+	$(PYTHON) -m ruff check reference/python tests scripts --select E9,F63,F7,F82
+
+test:
+	$(PYTHON) -m pytest tests --cov=$(PYREF) --cov-report=json:coverage.json --junitxml=test-results.xml -q
+
+check: lint test compile schemas
+
+release-check: check
+	$(PYTHON) scripts/verify_release.py
 
 compile:
 	$(PYTHON) -m compileall $(PYREF)
