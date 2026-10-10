@@ -8,7 +8,7 @@ import re
 import time
 import urllib.error
 
-from document_verifier_node import checked_response, generate
+from document_verifier_node import checked_response, generate, verifier_options
 from release_identity import source_identity
 
 
@@ -42,7 +42,8 @@ def main():
     (output / "input-manifest.json").write_text(json.dumps({
         "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
         "source": source_identity(root), "scope": packet["scope"],
-        "verifier_model": os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b")}, indent=2))
+        "verifier_model": os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b"),
+        "requested_options": verifier_options()}, indent=2))
     rows = []
     transport_failed = False
     for case in packet["cases"]:

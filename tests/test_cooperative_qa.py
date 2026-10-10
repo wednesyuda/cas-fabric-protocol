@@ -3,18 +3,28 @@ import contextlib
 import io
 import json
 import tempfile
+import os
 import unittest
 from unittest.mock import AsyncMock, patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from document_verifier_node import checked_response, handle, verification_schema
+from document_verifier_node import checked_response, handle, verification_schema, verifier_options
 from evaluate_cooperative_qa import fail_closed, score
 from evaluate_verifier_decisions import score_decision
 import evaluate_verifier_decisions
 
 
 class VerificationTests(unittest.TestCase):
+    def test_gpu_verification_requires_explicit_opt_in(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(verifier_options()["num_gpu"], 0)
+        with patch.dict(os.environ, {"CAS_VERIFIER_NUM_GPU": "-1"}):
+            self.assertEqual(verifier_options()["num_gpu"], -1)
+        for invalid in ("2", "invalid"):
+            with patch.dict(os.environ, {"CAS_VERIFIER_NUM_GPU": invalid}), self.assertRaises(ValueError):
+                verifier_options()
+
     def test_provider_timeout_stops_packet_without_claiming_full_evaluation(self):
         with tempfile.TemporaryDirectory() as temp:
             output = Path(temp) / "diagnostic"

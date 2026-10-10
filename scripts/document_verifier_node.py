@@ -71,14 +71,21 @@ def verification_schema(candidate, evidence):
     return {"anyOf": variants}
 
 
+def verifier_options():
+    num_gpu = int(os.environ.get("CAS_VERIFIER_NUM_GPU", "0"))
+    if num_gpu not in (0, -1):
+        raise ValueError("verifier num_gpu must be 0 (CPU) or -1 (provider-visible GPU)")
+    return {"temperature": 0, "seed": 42, "num_predict": 512,
+            "num_ctx": 4096, "num_gpu": num_gpu, "num_thread": 2}
+
+
 def generate(question, candidate, evidence):
     schema = verification_schema(candidate, evidence)
     payload = {"model": os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b"),
                "stream": False, "format": schema,
                "messages": [{"role": "system", "content": RULE + " Output schema: " + json.dumps(schema)}, {"role": "user", "content": json.dumps({
                    "question": question, "candidate": candidate, "evidence": evidence}, ensure_ascii=False)}],
-               "options": {"temperature": 0, "seed": 42, "num_predict": 512,
-                           "num_ctx": 4096, "num_gpu": 0, "num_thread": 2}}
+               "options": verifier_options()}
     request = urllib.request.Request(os.environ["CAS_VERIFIER_URL"] + "/api/chat",
         data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(request, timeout=remaining(120)) as stream:
