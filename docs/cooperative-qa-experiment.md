@@ -45,3 +45,29 @@ safe failure is not a quality pass. The pilot remains held. Source e918379 is
 the measured implementation; subsequent non-object response hardening does not
 change these scores. The earlier run had no authenticated subscriber and is an
 invalid transport attempt, not a model-quality result.
+
+## Decision-conditioned grammar retest
+
+At source 2fa6af7, the generator schema uses decision-specific alternatives:
+abstain/review require empty sources, accept follows the candidate's abstention
+state, and factual accept/revise require at least one allowed source. The schema
+is also included in the system prompt. Post-generation citation validation is
+unchanged. A synthetic actual-provider canary confirmed empty-source abstention;
+provider residency confirmed zero VRAM use.
+
+The same 17 frozen cases then scored baseline 8/17 and cooperative 8/17, with
+zero regressions, zero improvements and zero verifier validation errors. All
+17 added model calls completed, adding 747.02 seconds total (43.94 per case),
+21,052 prompt tokens and 1,587 output tokens. The verifier-loss probe again
+requested review without permitting actions. CPU provider cleanup was verified.
+The contract correction is successful; this composition still has no measured
+quality benefit and remains unsuitable for adoption. CI passed for 2fa6af7;
+local validation passed 70 tests plus 54 subtests and fatal Ruff checks.
+
+The controlled conflict response acknowledged opposing schedules in its reason
+but chose `revise`/`answer` with both sources and an unavailable-information
+answer. This is a semantic decision failure, not a scoring omission of the
+reason field. Do not infer review status from keywords or relax the gate.
+Next work should isolate evidence-based decision correctness before adding
+nodes or claiming emergence. Both replays remain development diagnostics;
+fresh held-out semantic review and the production pilot remain pending.
