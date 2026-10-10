@@ -13,14 +13,31 @@ from document_verifier_node import checked_response, handle, verification_schema
 from evaluate_cooperative_qa import fail_closed, score
 from evaluate_verifier_decisions import score_decision
 import evaluate_verifier_decisions
+from experiment_inference import complete
 
 
 class VerificationTests(unittest.TestCase):
+    def test_larger_provider_adapter_preserves_schema_budget_and_usage(self):
+        result = {"choices": [{"message": {"content": '{"answer":"x"}'}}],
+                  "usage": {"prompt_tokens": 14, "completion_tokens": 7}}
+        options = {"temperature": 0, "seed": 42, "num_predict": 512}
+        with patch("experiment_inference.urllib.request.urlopen", return_value=io.BytesIO(json.dumps(result).encode())) as provider:
+            content, tokens = complete("http://127.0.0.1:18039", "llamacpp", "cas-bonsai-27b", [], {"type": "object"}, options)
+        request = provider.call_args.args[0]
+        payload = json.loads(request.data)
+        self.assertTrue(request.full_url.endswith("/v1/chat/completions"))
+        self.assertEqual(payload["response_format"]["json_schema"]["schema"], {"type": "object"})
+        self.assertEqual(payload["max_tokens"], 512)
+        self.assertEqual(tokens["output_tokens"], 7)
+        self.assertEqual(content, '{"answer":"x"}')
+        with self.assertRaises(ValueError):
+            complete("http://127.0.0.1:18039", "invalid", "x", [], {}, options)
+
     def test_verifier_explicitly_disables_thinking_and_preserves_gpu_option(self):
         body = {"message": {"content": '{"decision":"abstain","answer":"Tidak tersedia.","sources":[],"reason":"Tidak ada bukti."}'},
                 "prompt_eval_count": 12, "eval_count": 10}
         with patch.dict(os.environ, {"CAS_VERIFIER_URL": "http://127.0.0.1:21437", "CAS_VERIFIER_NUM_GPU": "-1"}), \
-             patch("document_verifier_node.urllib.request.urlopen", return_value=io.BytesIO(json.dumps(body).encode())) as provider:
+             patch("experiment_inference.urllib.request.urlopen", return_value=io.BytesIO(json.dumps(body).encode())) as provider:
             result, tokens = generate("Pertanyaan?", {"abstain": True}, [{"source_id": "A"}])
         payload = json.loads(provider.call_args.args[0].data)
         self.assertIs(payload["think"], False)

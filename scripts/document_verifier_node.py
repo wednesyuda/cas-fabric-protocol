@@ -6,12 +6,12 @@ from pathlib import Path
 import signal
 import sys
 import time
-import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "reference/python"))
 from document_answer import validate_answer
 from fabric_nats import NATSFabric
 from request_budget import remaining
+from experiment_inference import complete
 
 CAPABILITY = "experiment.document.verify"
 RULE = ("Independently verify an answer against the supplied evidence and question. "
@@ -85,17 +85,12 @@ def verifier_options():
 
 def generate(question, candidate, evidence):
     schema = verification_schema(candidate, evidence)
-    payload = {"model": os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b"),
-               "stream": False, "think": False, "format": schema,
-               "messages": [{"role": "system", "content": RULE + " Output schema: " + json.dumps(schema)}, {"role": "user", "content": json.dumps({
-                   "question": question, "candidate": candidate, "evidence": evidence}, ensure_ascii=False)}],
-               "options": verifier_options()}
-    request = urllib.request.Request(os.environ["CAS_VERIFIER_URL"] + "/api/chat",
-        data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(request, timeout=remaining(120)) as stream:
-        result = json.load(stream)
-    return json.loads(result["message"]["content"]), {
-        "prompt_tokens": result.get("prompt_eval_count"), "output_tokens": result.get("eval_count")}
+    messages = [{"role": "system", "content": RULE + " Output schema: " + json.dumps(schema)},
+                {"role": "user", "content": json.dumps({"question": question, "candidate": candidate,
+                                                         "evidence": evidence}, ensure_ascii=False)}]
+    content, tokens = complete(os.environ["CAS_VERIFIER_URL"], os.environ.get("CAS_VERIFIER_BACKEND", "ollama"),
+        os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b"), messages, schema, verifier_options())
+    return json.loads(content), tokens
 
 
 async def handle(message):

@@ -98,7 +98,10 @@ def main():
     (output / "source-manifest.json").write_text(json.dumps(source_identity(ROOT), indent=2))
     import hashlib
     (output / "input-manifest.json").write_text(json.dumps({"packet_sha256": hashlib.sha256(packet_path.read_bytes()).hexdigest(),
-        "baseline_provenance": packet["baseline_provenance"], "verifier_model": "qwen2.5:3b"}, indent=2))
+        "baseline_provenance": packet["baseline_provenance"],
+        "verifier_model": os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b"),
+        "verifier_backend": os.environ.get("CAS_VERIFIER_BACKEND", "ollama"),
+        "num_gpu": os.environ.get("CAS_VERIFIER_NUM_GPU", "0")}, indent=2))
     cid = None
     process = None
     with tempfile.TemporaryDirectory(prefix="cas-cooperation-") as temp:
@@ -106,7 +109,8 @@ def main():
                                                "verifier": ([], ["capability." + CAPABILITY])})
         env = {**os.environ, "CAS_NATS_URL": "nats://127.0.0.1:22052",
                "CAS_NATS_AUTH_FILE": str(profile / "verifier.json"),
-               "CAS_VERIFIER_URL": "http://127.0.0.1:21437", "CAS_VERIFIER_MODEL": "qwen2.5:3b"}
+               "CAS_VERIFIER_URL": os.environ.get("CAS_VERIFIER_URL", "http://127.0.0.1:21437"),
+               "CAS_VERIFIER_MODEL": os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b")}
         try:
             cid = subprocess.check_output(["docker", "create", "--name", "cas-cooperation-" + uuid.uuid4().hex[:10],
                 "--memory", "256m", "--cpus", "1", "-p", "127.0.0.1:22052:4222", "--mount",
