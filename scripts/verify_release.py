@@ -195,7 +195,7 @@ def main():
         coordinator = launch(str(PYREF / "task_coordinator_service.py"))
         for skill in ("memory.query", "reasoning.llm"):
             launch(str(PYREF / "auction_worker_node_service.py"), {
-                "CAS_WORKER_ID": "release-worker-" + skill, "CAS_WORKER_SKILLS": skill})
+                "CAS_WORKER_ID": "release-worker-" + skill.replace(".", "-"), "CAS_WORKER_SKILLS": skill})
         asyncio.run(ready())
         with (run / "compliance.log").open("w") as stream:
             subprocess.run([sys.executable, str(PYREF / "verify_compliance_runtime.py")],
