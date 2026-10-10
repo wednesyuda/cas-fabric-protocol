@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from document_verifier_node import checked_response, handle, verification_schema
 from evaluate_cooperative_qa import fail_closed, score
+from evaluate_verifier_decisions import score_decision
 
 
 class VerificationTests(unittest.TestCase):
@@ -50,6 +51,17 @@ class VerificationTests(unittest.TestCase):
         case = {"kind": "controlled_conflict"}
         self.assertFalse(score(case, {"status": "abstain", "output": "Tidak diketahui"}))
         self.assertTrue(score(case, {"status": "needs_review", "sources": [], "output": "Bukti berkonflik."}))
+
+    def test_decision_diagnostic_does_not_reward_reason_only_conflict_or_blanket_review(self):
+        conflict = {"expected_status": "needs_review", "required_terms": ["senin", "jumat"], "expected_sources": []}
+        response = {"ok": True, "actions_allowed": False, "status": "answer",
+                    "output": "Informasi tidak tersedia.", "sources": ["A"],
+                    "reason": "Bukti Senin dan Jumat berkonflik."}
+        self.assertFalse(score_decision(conflict, response))
+        response.update(status="needs_review", output="Bukti berkonflik: Senin dan Jumat.", sources=[])
+        self.assertTrue(score_decision(conflict, response))
+        factual = {"expected_status": "answer", "required_terms": ["senin"], "expected_sources": ["A"]}
+        self.assertFalse(score_decision(factual, response))
 
 
 class VerifierReadinessTests(unittest.IsolatedAsyncioTestCase):
