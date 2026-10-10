@@ -4,11 +4,24 @@ from unittest.mock import AsyncMock, patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from document_verifier_node import checked_response, handle
+from document_verifier_node import checked_response, handle, verification_schema
 from evaluate_cooperative_qa import fail_closed, score
 
 
 class VerificationTests(unittest.TestCase):
+    def test_schema_constrains_sources_by_decision(self):
+        for abstain in (False, True):
+            schema = verification_schema({"abstain": abstain}, [{"source_id": "A"}])
+            for variant in schema["anyOf"]:
+                props = variant["properties"]
+                decision = props["decision"]["enum"][0]
+                sources = props["sources"]
+                if decision in ("abstain", "needs_review") or (decision == "accept" and abstain):
+                    self.assertEqual(sources["maxItems"], 0)
+                else:
+                    self.assertEqual(sources["minItems"], 1)
+                self.assertEqual(sources["items"]["enum"], ["A"])
+
     def test_accept_cannot_silently_replace_candidate(self):
         candidate = {"answer": "Original", "sources": ["A"], "abstain": False}
         result = checked_response({"decision": "accept", "answer": "Different", "sources": ["A"],

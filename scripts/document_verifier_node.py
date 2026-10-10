@@ -43,16 +43,29 @@ def checked_response(value, candidate, evidence):
             "reason": value["reason"], "actions_allowed": False}
 
 
-def generate(question, candidate, evidence):
-    schema = {"type": "object", "additionalProperties": False,
+def verification_schema(candidate, evidence):
+    variants = []
+    for decision in ("accept", "revise", "abstain", "needs_review"):
+        no_sources = decision in ("abstain", "needs_review") or (decision == "accept" and candidate["abstain"])
+        sources = {"type": "array", "items": {"type": "string", "enum": [e["source_id"] for e in evidence]}}
+        if no_sources:
+            sources["maxItems"] = 0
+        else:
+            sources["minItems"] = 1
+        variants.append({"type": "object", "additionalProperties": False,
               "required": ["decision", "answer", "sources", "reason"], "properties": {
-                  "decision": {"type": "string", "enum": ["accept", "revise", "abstain", "needs_review"]},
+                  "decision": {"type": "string", "enum": [decision]},
                   "answer": {"type": "string", "minLength": 1},
-                  "sources": {"type": "array", "items": {"type": "string", "enum": [e["source_id"] for e in evidence]}},
-                  "reason": {"type": "string", "minLength": 1}}}
+                  "sources": sources,
+                  "reason": {"type": "string", "minLength": 1}}})
+    return {"anyOf": variants}
+
+
+def generate(question, candidate, evidence):
+    schema = verification_schema(candidate, evidence)
     payload = {"model": os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b"),
                "stream": False, "format": schema,
-               "messages": [{"role": "system", "content": RULE}, {"role": "user", "content": json.dumps({
+               "messages": [{"role": "system", "content": RULE + " Output schema: " + json.dumps(schema)}, {"role": "user", "content": json.dumps({
                    "question": question, "candidate": candidate, "evidence": evidence}, ensure_ascii=False)}],
                "options": {"temperature": 0, "seed": 42, "num_predict": 512,
                            "num_ctx": 4096, "num_gpu": 0, "num_thread": 2}}
