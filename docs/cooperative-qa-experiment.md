@@ -107,3 +107,39 @@ gate. Next feasibility work should establish an isolated verifier execution
 budget (for example on the P2000) before further model comparisons. Model
 decision correctness and independent semantic review remain required; neither
 rendering a reason nor a process exit code grants production approval.
+
+## P2000 execution feasibility
+
+Explicit `CAS_VERIFIER_NUM_GPU=-1` allows acceleration only on GPUs visible to
+the separate provider; the default remains CPU (`0`). The owned provider was
+restricted to the P2000 UUID. Actual residency showed the derived Qwen3 model
+using 3,403,593,809 bytes of VRAM, with P2000 usage rising from 553 to 3,881 MiB.
+A4000 usage remained 14,195 MiB. Provider/model identity and GPU process residency
+were captured, rather than inferred from configuration.
+
+The initial request omitted `think:false`; three recorded cases returned empty
+content after 512 generated tokens, and the run was aborted. Source fdc11c1
+explicitly disables thinking, matching the established bounded Qwen3 QA path.
+It completed all eight controls in 70.40 seconds, scoring 5/8 with zero envelope
+errors: conflicts 3/3, answer controls 2/4, absent information 0/1. Per-case time
+was 5.82–11.41 seconds. The previous CPU timeout also omitted explicit thinking
+mode, so it cannot establish a controlled CPU-versus-GPU latency comparison.
+
+Source daad660 distinguished wrong candidates from evidence conflicts and gave
+explicit supersession priority. It completed eight controls in 62.05 seconds,
+again scoring 5/8 with zero envelope errors: conflicts 1/3, answer controls 4/4,
+absent information 0/1. Mean latency was 7.76 seconds, maximum 12.01 seconds;
+tokens were 7,116 prompt and 958 output. Resolving answer controls introduced
+conflict regressions, so the candidate is not adopted. A transfer-race duplicate
+of fdc11c1 was caught by source identity and aborted; it is excluded from the
+instruction retest. Future exports must finish transferring and verify identity
+before launching their evaluation.
+
+P2000 feasibility is demonstrated only for this bounded eight-case development
+workload, not production capacity or semantic quality. The model is also the
+primary reasoner's model, so independent role execution is not weight diversity.
+No operational replay followed the failed specificity gate. After unloading the
+experimental model and stopping the owned provider, P2000 usage returned to
+553 MiB and A4000 remained unchanged. Concurrent original soak recorded 455
+requests with zero failures and no terminal summary. Local validation passed
+75 tests plus 54 subtests and fatal Ruff checks. Pilot remains held.
