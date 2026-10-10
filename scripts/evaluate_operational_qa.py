@@ -82,6 +82,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--packet", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--model-url", default="http://127.0.0.1:21436")
+    parser.add_argument("--model", default="qwen3:4b")
     args = parser.parse_args()
     packet = json.loads(Path(args.packet).read_text(encoding="utf-8"))
     os.umask(0o077)
@@ -94,7 +96,7 @@ def main():
         profile = prepare(Path(temp) / "auth")
         env = {**os.environ, "CAS_NATS_URL": "nats://127.0.0.1:22042",
                "CAS_QDRANT_URL": "http://127.0.0.1:22043", "CAS_DOCUMENT_QA": "1",
-               "CAS_OLLAMA_URL": "http://127.0.0.1:21436", "CAS_REASONING_MODEL": "qwen3:4b",
+               "CAS_OLLAMA_URL": args.model_url, "CAS_REASONING_MODEL": args.model,
                "CAS_EMBED_URL": "http://127.0.0.1:21434", "CAS_EMBED_MODEL": "nomic-embed-text:v1.5",
                "CAS_GOAL_STORE_PATH": str(output / "goals.json"),
                "CAS_REFLECTION_STORE_PATH": str(output / "reflections.json")}
