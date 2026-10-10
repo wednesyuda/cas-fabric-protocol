@@ -1,4 +1,8 @@
 import sys
+import contextlib
+import io
+import json
+import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 from pathlib import Path
@@ -7,9 +11,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from document_verifier_node import checked_response, handle, verification_schema
 from evaluate_cooperative_qa import fail_closed, score
 from evaluate_verifier_decisions import score_decision
+import evaluate_verifier_decisions
 
 
 class VerificationTests(unittest.TestCase):
+    def test_provider_timeout_stops_packet_without_claiming_full_evaluation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / "diagnostic"
+            with patch.object(sys, "argv", ["diagnostic", "--output", str(output)]), \
+                 patch.object(evaluate_verifier_decisions, "source_identity", return_value={"commit": "test"}), \
+                 patch.object(evaluate_verifier_decisions, "generate", side_effect=TimeoutError("timed out")) as model, \
+                 contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
+                evaluate_verifier_decisions.main()
+            self.assertEqual(model.call_count, 1)
+            summary = json.loads((output / "summary.json").read_text())
+            self.assertEqual(summary["cases"], 1)
+            self.assertGreater(summary["planned_cases"], summary["cases"])
+            self.assertTrue(summary["aborted_transport_failure"])
+            self.assertEqual(summary["pilot_gate"], "hold")
+
     def test_schema_constrains_sources_by_decision(self):
         for abstain in (False, True):
             schema = verification_schema({"abstain": abstain}, [{"source_id": "A"}])

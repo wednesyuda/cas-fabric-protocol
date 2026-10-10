@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import time
+import urllib.error
 
 from document_verifier_node import checked_response, generate
 from release_identity import source_identity
@@ -43,6 +44,7 @@ def main():
         "source": source_identity(root), "scope": packet["scope"],
         "verifier_model": os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b")}, indent=2))
     rows = []
+    transport_failed = False
     for case in packet["cases"]:
         before = time.monotonic()
         tokens = None
@@ -52,6 +54,7 @@ def main():
             response = checked_response(value, case["candidate"], case["evidence"])
         except Exception as exc:
             response = {"ok": False, "error": str(exc), "actions_allowed": False}
+            transport_failed = isinstance(exc, (TimeoutError, urllib.error.URLError))
         row = {"id": case["id"], "passed": score_decision(case, response),
                "expected_status": case["expected_status"], "response": response,
                "tokens": tokens, "elapsed_s": time.monotonic() - before}
@@ -59,7 +62,10 @@ def main():
         with (output / "results.jsonl").open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(row, ensure_ascii=False) + "\n")
         print(json.dumps({"completed": len(rows), "id": case["id"], "passed": row["passed"]}), flush=True)
-    summary = {"cases": len(rows), "passed": sum(r["passed"] for r in rows),
+        if transport_failed:
+            break
+    summary = {"planned_cases": len(packet["cases"]), "cases": len(rows),
+               "aborted_transport_failure": transport_failed, "passed": sum(r["passed"] for r in rows),
                "validation_errors": sum(r["response"].get("ok") is not True for r in rows),
                "failed_ids": [r["id"] for r in rows if not r["passed"]],
                "elapsed_s": sum(r["elapsed_s"] for r in rows),

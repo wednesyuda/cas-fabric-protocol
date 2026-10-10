@@ -71,3 +71,39 @@ reason field. Do not infer review status from keywords or relax the gate.
 Next work should isolate evidence-based decision correctness before adding
 nodes or claiming emergence. Both replays remain development diagnostics;
 fresh held-out semantic review and the production pilot remain pending.
+
+## Isolated decision diagnostics
+
+At source 82d5cc6, explicit conflict-first instructions were tested on eight
+synthetic development cases frozen before inference. They include reversed
+source order, conflicting quantities, agreeing claims, different subjects,
+explicit supersession, a correctable candidate and absent information. Gold
+labels are not sent to the model. This is a provider-level diagnostic, not a
+NATS composition or independently reviewed held-out quality test.
+
+Qwen2.5 completed all eight with zero envelope errors, but scored only 2/8
+before exposing review explanations (235.30 seconds). Two schedule cases chose
+review and explained both values in `reason`, while `answer` omitted that
+explanation. Source bade5e5 makes review reasons visible without changing the
+model's decision. Deterministic replay of those archived outputs scored 4/8;
+it used no new model calls and is not a fresh generation result. Quantity
+conflict, different-subject, correctable-candidate and missing-information
+controls still failed. In particular, the model guessed that one contradictory
+quantity was erroneous and treated distinct subjects as needing review.
+The prompt candidate therefore fails specificity controls and is not adopted.
+
+A bounded comparison using the already available cas-qwen3-nothink:4b model
+on the same CPU-only provider timed out at 120 seconds on its first case.
+The run was stopped after one recorded result, with the remaining packet
+unevaluated. This is a runtime feasibility failure, not a semantic verdict or
+an 0/8 score. Both model identities and zero-VRAM residency were recorded.
+The owned provider was stopped; production providers and soak were preserved.
+
+The diagnostic runner now stops on a provider timeout/connection failure and
+reports planned versus completed cases, preventing an unusable provider from
+consuming the whole packet. Validation: 73 tests plus 54 subtests and fatal
+Ruff checks passed. No larger operational replay follows this failed control
+gate. Next feasibility work should establish an isolated verifier execution
+budget (for example on the P2000) before further model comparisons. Model
+decision correctness and independent semantic review remain required; neither
+rendering a reason nor a process exit code grants production approval.
