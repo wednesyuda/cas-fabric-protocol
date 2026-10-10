@@ -13,10 +13,33 @@ from document_verifier_node import checked_response, handle, verification_schema
 from evaluate_cooperative_qa import fail_closed, score
 from evaluate_verifier_decisions import score_decision
 import evaluate_verifier_decisions
+import evaluate_model_baseline
 from experiment_inference import complete
 
 
 class VerificationTests(unittest.TestCase):
+    def test_incomplete_single_baseline_cannot_become_a_cooperative_packet(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            packet = root / "input.json"
+            case = {"id": "unknown", "kind": "unanswerable", "question": "Unknown?",
+                    "baseline": {"evidence": [{"source_id": "A", "text": "Other facts."}]}}
+            packet.write_text(json.dumps({"cases": [case, {**case, "id": "unknown-2"}]}))
+            output = root / "result"
+            args = ["baseline", "--packet", str(packet), "--output", str(output),
+                    "--model", "test", "--backend", "ollama", "--url", "http://127.0.0.1:21437"]
+            with patch.object(sys, "argv", args), \
+                 patch.object(evaluate_model_baseline, "source_identity", return_value={"commit": "test"}), \
+                 patch.object(evaluate_model_baseline, "complete", side_effect=TimeoutError("timed out")) as model, \
+                 contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
+                evaluate_model_baseline.main()
+            self.assertEqual(model.call_count, 1)
+            self.assertFalse((output / "baseline-packet.json").exists())
+            summary = json.loads((output / "summary.json").read_text())
+            self.assertEqual(summary["cases"], 1)
+            self.assertEqual(summary["planned_cases"], 2)
+            self.assertEqual(summary["passed"], 0)
+
     def test_larger_provider_adapter_preserves_schema_budget_and_usage(self):
         result = {"choices": [{"message": {"content": '{"answer":"x"}'}}],
                   "usage": {"prompt_tokens": 14, "completion_tokens": 7}}
