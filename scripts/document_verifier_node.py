@@ -66,12 +66,18 @@ def generate(question, candidate, evidence):
 
 async def handle(message):
     before = time.monotonic()
+    attempted = False
+    tokens = None
     try:
         payload = message["payload"]
+        if payload.get("probe") is True:
+            await message["respond"]({"ok": True, "type": "experiment.verification.health", "actions_allowed": False})
+            return
         question, candidate, evidence = payload["question"], payload["candidate"], payload["evidence"]
         if not isinstance(question, str) or not question.strip() or not evidence:
             raise ValueError("question and evidence are required")
         validate_answer(json.dumps(candidate), evidence)
+        attempted = True
         value, tokens = await asyncio.to_thread(generate, question, candidate, evidence)
         remaining()
         response = {**checked_response(value, candidate, evidence), "tokens": tokens,
@@ -81,6 +87,9 @@ async def handle(message):
                     "output": "Verifikasi gagal; perlu tinjauan manusia.", "sources": [],
                     "actions_allowed": False, "error": str(exc)}
     response["elapsed_s"] = time.monotonic() - before
+    response["model_request_attempted"] = attempted
+    if tokens is not None:
+        response["tokens"] = tokens
     if message.get("respond"):
         await message["respond"](response)
 
@@ -88,7 +97,7 @@ async def handle(message):
 async def main():
     fabric = NATSFabric()
     await fabric.connect()
-    await fabric.subscribe_async(CAPABILITY, handle, max_active=1, max_queued=2, max_queue_wait=15)
+    await fabric.subscribe_async("capability." + CAPABILITY, handle, max_active=1, max_queued=2, max_queue_wait=15)
     stop = asyncio.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         asyncio.get_running_loop().add_signal_handler(sig, stop.set)

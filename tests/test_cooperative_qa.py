@@ -1,9 +1,10 @@
 import sys
 import unittest
+from unittest.mock import AsyncMock, patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from document_verifier_node import checked_response
+from document_verifier_node import checked_response, handle
 from evaluate_cooperative_qa import fail_closed, score
 
 
@@ -36,3 +37,12 @@ class VerificationTests(unittest.TestCase):
         case = {"kind": "controlled_conflict"}
         self.assertFalse(score(case, {"status": "abstain", "output": "Tidak diketahui"}))
         self.assertTrue(score(case, {"status": "needs_review", "sources": [], "output": "Bukti berkonflik."}))
+
+
+class VerifierReadinessTests(unittest.IsolatedAsyncioTestCase):
+    async def test_readiness_does_not_call_model(self):
+        respond = AsyncMock()
+        with patch("document_verifier_node.generate") as model:
+            await handle({"payload": {"probe": True}, "respond": respond})
+        model.assert_not_called()
+        self.assertEqual(respond.call_args.args[0]["type"], "experiment.verification.health")

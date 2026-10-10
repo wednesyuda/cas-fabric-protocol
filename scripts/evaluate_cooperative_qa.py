@@ -31,7 +31,10 @@ def score(case, response):
 def fail_closed(response):
     if not response or response.get("ok") is not True or response.get("actions_allowed") is not False:
         return {"ok": False, "status": "needs_review", "output": "Verifikasi gagal; perlu tinjauan manusia.",
-                "sources": [], "actions_allowed": False}
+                "sources": [], "actions_allowed": False,
+                "error": (response or {}).get("error", "verifier unavailable or invalid"),
+                "model_request_attempted": (response or {}).get("model_request_attempted", False),
+                "tokens": (response or {}).get("tokens")}
     return response
 
 
@@ -40,6 +43,9 @@ async def run(packet, output, process):
     await fabric.connect()
     rows = []
     try:
+        ready = await fabric.request(CAPABILITY, {"probe": True}, timeout=5)
+        if not ready or ready.get("type") != "experiment.verification.health":
+            raise RuntimeError("authenticated verifier readiness failed")
         for case in packet["cases"]:
             baseline = case["baseline"]
             candidate = {"answer": baseline["output"], "sources": baseline["sources"],
@@ -67,7 +73,10 @@ async def run(packet, output, process):
             "regressions": [r["id"] for r in rows if r["baseline_pass"] and not r["cooperative_pass"]],
             "improvements": [r["id"] for r in rows if not r["baseline_pass"] and r["cooperative_pass"]],
             "verifier_errors": sum(not r["verification_ok"] for r in rows),
-            "extra_model_calls": len(rows), "total_verifier_elapsed_s": sum(r["verifier_elapsed_s"] for r in rows),
+            "verification_requests": len(rows),
+            "extra_model_request_attempts": sum(bool(r["response"].get("model_request_attempted")) for r in rows),
+            "completed_extra_model_calls": sum(bool(r["response"].get("tokens")) for r in rows),
+            "total_verifier_elapsed_s": sum(r["verifier_elapsed_s"] for r in rows),
             "verifier_unavailability": "needs_review, no action", "pilot_gate": "hold",
             "scope": "paired replay of frozen baseline; lexical diagnostics, not independent semantic scoring",
             "reference_review": "historical QA references approved by owner; new outputs need review",
