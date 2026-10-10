@@ -82,7 +82,7 @@ def verifier_options():
 def generate(question, candidate, evidence):
     schema = verification_schema(candidate, evidence)
     payload = {"model": os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b"),
-               "stream": False, "format": schema,
+               "stream": False, "think": False, "format": schema,
                "messages": [{"role": "system", "content": RULE + " Output schema: " + json.dumps(schema)}, {"role": "user", "content": json.dumps({
                    "question": question, "candidate": candidate, "evidence": evidence}, ensure_ascii=False)}],
                "options": verifier_options()}

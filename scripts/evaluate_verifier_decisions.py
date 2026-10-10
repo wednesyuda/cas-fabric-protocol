@@ -43,7 +43,7 @@ def main():
         "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
         "source": source_identity(root), "scope": packet["scope"],
         "verifier_model": os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b"),
-        "requested_options": verifier_options()}, indent=2))
+        "requested_options": verifier_options(), "think": False}, indent=2))
     rows = []
     transport_failed = False
     for case in packet["cases"]:

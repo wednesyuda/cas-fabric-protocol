@@ -9,13 +9,25 @@ from unittest.mock import AsyncMock, patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from document_verifier_node import checked_response, handle, verification_schema, verifier_options
+from document_verifier_node import checked_response, handle, verification_schema, verifier_options, generate
 from evaluate_cooperative_qa import fail_closed, score
 from evaluate_verifier_decisions import score_decision
 import evaluate_verifier_decisions
 
 
 class VerificationTests(unittest.TestCase):
+    def test_verifier_explicitly_disables_thinking_and_preserves_gpu_option(self):
+        body = {"message": {"content": '{"decision":"abstain","answer":"Tidak tersedia.","sources":[],"reason":"Tidak ada bukti."}'},
+                "prompt_eval_count": 12, "eval_count": 10}
+        with patch.dict(os.environ, {"CAS_VERIFIER_URL": "http://127.0.0.1:21437", "CAS_VERIFIER_NUM_GPU": "-1"}), \
+             patch("document_verifier_node.urllib.request.urlopen", return_value=io.BytesIO(json.dumps(body).encode())) as provider:
+            result, tokens = generate("Pertanyaan?", {"abstain": True}, [{"source_id": "A"}])
+        payload = json.loads(provider.call_args.args[0].data)
+        self.assertIs(payload["think"], False)
+        self.assertEqual(payload["options"]["num_gpu"], -1)
+        self.assertEqual(result["decision"], "abstain")
+        self.assertEqual(tokens["output_tokens"], 10)
+
     def test_gpu_verification_requires_explicit_opt_in(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(verifier_options()["num_gpu"], 0)
