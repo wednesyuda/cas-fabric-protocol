@@ -68,6 +68,13 @@ extraction, unknowns and controlled conflicts/injections. No raw corpus is commi
 Extraction/stress tests do not replace human-scored operational Q&A or end-to-end
 retrieval quality. Failed quality gates hold pilot activation even if CI passes.
 
+`scripts/evaluate_operational_qa.py` runs private QA packets through authenticated
+ingestion, goal submission, retrieval and generation on isolated ports 22042/22043.
+It records expected-source retrieval separately from candidate-reference keyword
+checks. Historical user statements are labelled as historical, not approved SOP.
+Independent reference review and semantic/citation scoring remain mandatory even
+if every automated diagnostic passes. Raw packets and responses remain private.
+
 ## State ownership, backup and restore
 
 The coordinator holds OS locks on both store paths. A second writer or backup is
