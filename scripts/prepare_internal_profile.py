@@ -20,12 +20,12 @@ ROLES = {
 }
 
 
-def prepare(root):
+def prepare(root, roles=None):
     root = Path(root).resolve()
     root.mkdir(mode=0o700, parents=True, exist_ok=False)
     os.chmod(root, 0o700)
     users = []
-    for role, (publish, subscribe) in ROLES.items():
+    for role, (publish, subscribe) in (ROLES if roles is None else roles).items():
         auth = {"user": role, "password": secrets.token_urlsafe(32)}
         path = root / (role + ".json")
         path.write_text(json.dumps(auth))
