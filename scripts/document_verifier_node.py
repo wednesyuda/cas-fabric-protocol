@@ -44,9 +44,12 @@ def checked_response(value, candidate, evidence):
         "needs_review": candidate.get("needs_review", False) if decision == "accept" else decision == "needs_review"}), evidence)
     if decision == "accept":
         checked = validate_answer(json.dumps(candidate), evidence)
+    output = checked["answer"]
+    if checked.get("needs_review"):
+        output += "\n\n" + value["reason"]
     return {"ok": True, "type": "experiment.verification.response", "decision": decision,
             "status": "needs_review" if checked.get("needs_review") else "abstain" if checked["abstain"] else "answer",
-            "output": checked["answer"], "sources": checked["sources"], "evidence": evidence,
+            "output": output, "sources": checked["sources"], "evidence": evidence,
             "reason": value["reason"], "actions_allowed": False}
 
 

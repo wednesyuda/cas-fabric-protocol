@@ -40,7 +40,8 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     (output / "input-manifest.json").write_text(json.dumps({
         "fixture_sha256": hashlib.sha256(fixture.read_bytes()).hexdigest(),
-        "source": source_identity(root), "scope": packet["scope"]}, indent=2))
+        "source": source_identity(root), "scope": packet["scope"],
+        "verifier_model": os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b")}, indent=2))
     rows = []
     for case in packet["cases"]:
         before = time.monotonic()
@@ -65,7 +66,8 @@ def main():
                "groups": {status: {"cases": sum(r["expected_status"] == status for r in rows),
                           "passed": sum(r["passed"] and r["expected_status"] == status for r in rows)}
                           for status in ("needs_review", "answer", "abstain")},
-               "scope": packet["scope"], "pilot_gate": "hold"}
+               "scope": packet["scope"], "pilot_gate": "hold",
+               "verifier_model": os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b")}
     (output / "summary.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary), flush=True)
     if summary["failed_ids"]:

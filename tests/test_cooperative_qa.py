@@ -47,6 +47,18 @@ class VerificationTests(unittest.TestCase):
             "sources": [], "reason": "Bukti tidak ada."}, candidate, [{"source_id": "A"}])
         self.assertEqual(result["status"], "abstain")
 
+    def test_review_explanation_is_visible_without_changing_decision(self):
+        candidate = {"answer": "Tidak tersedia.", "sources": [], "abstain": True}
+        result = checked_response({"decision": "needs_review", "answer": "Perlu review.",
+            "sources": [], "reason": "Bukti Senin dan Jumat bertentangan."}, candidate, [{"source_id": "A"}])
+        self.assertEqual(result["status"], "needs_review")
+        self.assertIn("Senin dan Jumat bertentangan", result["output"])
+        self.assertEqual(result["sources"], [])
+        result = checked_response({"decision": "revise", "answer": "Senin.", "sources": ["A"],
+            "reason": "Ada konflik yang belum diselesaikan."}, candidate, [{"source_id": "A"}])
+        self.assertEqual(result["status"], "answer")
+        self.assertEqual(result["output"], "Senin.")
+
     def test_conflict_requires_explanation_and_review(self):
         case = {"kind": "controlled_conflict"}
         self.assertFalse(score(case, {"status": "abstain", "output": "Tidak diketahui"}))
