@@ -10,6 +10,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/embeddings":
             digest = hashlib.sha256(payload["prompt"].encode()).digest()
             result = {"embedding": [(x + 1) / 256 for x in digest]}
+        elif self.path == "/api/chat":
+            context = json.loads(payload["messages"][-1]["content"])
+            documents = context.get("documents", [])
+            answer = {"answer": documents[0]["text"] if documents else "Informasi tidak tersedia dalam dokumen.",
+                      "sources": [documents[0]["source_id"]] if documents else [],
+                      "abstain": not bool(documents), "needs_review": False}
+            result = {"message": {"content": json.dumps(answer)}}
         elif self.path == "/api/generate":
             result = {"response": "Fixture response: " + payload["prompt"][-300:]}
         else:

@@ -19,6 +19,7 @@ import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Optional
+from request_budget import remaining
 import httpx
 import numpy as np
 
@@ -113,7 +114,7 @@ class QdrantMemoryClient:
 
     async def connect(self) -> None:
         self._client = httpx.AsyncClient(timeout=30.0)
-        r = await self._client.get(f"{self.base_url}/healthz")
+        r = await self._client.get(f"{self.base_url}/healthz", timeout=remaining(30))
         r.raise_for_status()
         print(f"[MemoryFabric] Connected to Qdrant at {self.base_url}")
 
@@ -125,6 +126,7 @@ class QdrantMemoryClient:
         """Create collection if it doesn't exist."""
         r = await self._client.put(
             f"{self.base_url}/collections/{name}",
+            timeout=remaining(30),
             json={"vectors": {"size": vector_size, "distance": "Cosine"}},
         )
         if r.status_code not in (200, 409):
@@ -135,6 +137,7 @@ class QdrantMemoryClient:
         await self.ensure_collection(collection, len(record.embedding))
         r = await self._client.put(
             f"{self.base_url}/collections/{collection}/points",
+            timeout=remaining(30),
             json={
                 "points": [{
                     "id": record.memory_id,
@@ -170,6 +173,7 @@ class QdrantMemoryClient:
             payload["filter"] = filter_dict
         r = await self._client.post(
             f"{self.base_url}/collections/{collection}/points/search",
+            timeout=remaining(30),
             json=payload,
         )
         r.raise_for_status()
@@ -187,6 +191,7 @@ class QdrantMemoryClient:
             payload["filter"] = filter_dict
         r = await self._client.post(
             f"{self.base_url}/collections/{collection}/points/scroll",
+            timeout=remaining(30),
             json=payload,
         )
         r.raise_for_status()
@@ -516,6 +521,7 @@ class MemoryFabric:
             content = payload.get("content", "")
             embedding = await self.embedding_fn(content)
 
+            remaining(30)
             record = MemoryRecord(
                 memory_id=str(uuid.uuid4()),
                 memory_type=mt,
@@ -600,6 +606,7 @@ class MemoryFabric:
         metadata: Optional[dict] = None,
     ) -> str:
         embedding = await self.embedding_fn(content)
+        remaining(30)
         record = MemoryRecord(
             memory_id=str(uuid.uuid4()),
             memory_type=memory_type,
@@ -646,6 +653,7 @@ class OllamaEmbedder:
             raise RuntimeError("OllamaEmbedder.connect() must be called first")
         r = await self._client.post(
             f"{self.base_url}/api/embeddings",
+            timeout=remaining(30),
             json={"model": self.model, "prompt": text},
         )
         r.raise_for_status()

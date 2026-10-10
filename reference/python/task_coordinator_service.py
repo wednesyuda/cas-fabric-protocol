@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any
 
 from fabric_nats import NATSFabric
+from request_budget import remaining
+from state_lock import StateLocks
 from skill_genome import retention_update
 
 
@@ -223,8 +225,18 @@ class TaskCoordinator:
         self.fabric = NATSFabric()
         self.goals = GoalStore()
         self.reflections = ReflectionStore()
+        self.state_locks = StateLocks([self.goals.path, self.reflections.path])
 
     async def start(self) -> None:
+        self.state_locks.acquire()
+        try:
+            await self._start()
+        except BaseException:
+            self.state_locks.close()
+            await self.fabric.close()
+            raise
+
+    async def _start(self) -> None:
         self.goals.load()
         self.goals.recover_inflight()
         self.reflections.load()
@@ -234,7 +246,7 @@ class TaskCoordinator:
         await self.fabric.subscribe_async("capability.goal.update", self.handle_goal_update)
         await self.fabric.subscribe_async("capability.goal.complete", self.handle_goal_complete)
         await self.fabric.subscribe_async("capability.reflection.status", self.handle_reflection_status)
-        await self.fabric.subscribe_async("capability.goal.submit", self.handle_goal)
+        await self.fabric.subscribe_async("capability.goal.submit", self.handle_goal, max_active=1, max_queued=2, max_queue_wait=15)
         LOGGER.info("Task coordinator ready: capability=goal.submit")
 
     async def handle_goal_create(self, message: dict) -> None:
@@ -367,6 +379,7 @@ class TaskCoordinator:
                 },
             )
             await asyncio.sleep(window / 1000.0)
+            remaining()
             closed_subscription = subscription
             subscription = None
             await closed_subscription.unsubscribe()
@@ -607,7 +620,10 @@ class TaskCoordinator:
         return results
 
     async def close(self) -> None:
-        await self.fabric.close()
+        try:
+            await self.fabric.close()
+        finally:
+            self.state_locks.close()
 
 
 async def main() -> None:

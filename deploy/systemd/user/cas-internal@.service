@@ -1,0 +1,21 @@
+[Unit]
+Description=CAS internal service %i
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/services/cas-internal-current/reference/python
+EnvironmentFile=%h/.config/cas-internal/%i.env
+ExecStart=%h/services/cas-internal-current/.venv/bin/python %h/services/cas-internal-current/reference/python/${CAS_SERVICE_SCRIPT}
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=150
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/state/cas-internal
+
+[Install]
+WantedBy=default.target

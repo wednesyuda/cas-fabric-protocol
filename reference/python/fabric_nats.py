@@ -31,6 +31,11 @@ import asyncio
 import json
 import logging
 import os
+import time
+import ssl
+from pathlib import Path
+from urllib.parse import urlsplit
+from request_budget import deadline_for, request_deadline
 from typing import Any, Callable, Optional
 
 import nats
@@ -90,6 +95,8 @@ class NATSFabric:
         self._nc: Optional[NATSClient] = None
         self._subscriptions: list = []
         self._closing = False
+        self._dispatch_tasks = set()
+        self.admission_metrics = {}
 
     async def connect(self, connect_timeout: float = 5.0) -> None:
         """
@@ -106,9 +113,31 @@ class NATSFabric:
         Raises asyncio.TimeoutError if no server responds within
         connect_timeout seconds.
         """
+        servers = self._servers if isinstance(self._servers, list) else [self._servers]
+        if any(urlsplit(server).username is not None for server in servers):
+            raise ValueError("NATS URL must not contain credentials; use CAS_NATS_AUTH_FILE")
+        options = {}
+        auth = os.getenv("CAS_NATS_AUTH_FILE")
+        if auth:
+            profile = json.loads(Path(auth).read_text())
+            options.update(user=profile["user"], password=profile["password"],
+                           inbox_prefix="_INBOX." + profile["user"])
+        credentials = os.getenv("CAS_NATS_CREDENTIALS_FILE")
+        if credentials:
+            if auth:
+                raise ValueError("choose one NATS authentication profile")
+            options["user_credentials"] = credentials
+        ca = os.getenv("CAS_NATS_TLS_CA")
+        if ca:
+            context = ssl.create_default_context(cafile=ca)
+            cert = os.getenv("CAS_NATS_TLS_CERT")
+            if cert:
+                context.load_cert_chain(cert, os.environ["CAS_NATS_TLS_KEY"])
+            options["tls"] = context
         self._nc = await asyncio.wait_for(
             nats.connect(
                 servers=self._servers,
+                **options,
                 reconnect_time_wait=2,
                 max_reconnect_attempts=-1,  # retry forever, but only AFTER first success
                 error_cb=self._on_error,
@@ -123,6 +152,8 @@ class NATSFabric:
     async def close(self) -> None:
         if self._nc and not self._nc.is_closed:
             self._closing = True
+            if self._dispatch_tasks:
+                await asyncio.gather(*list(self._dispatch_tasks), return_exceptions=True)
             await self._nc.drain()
             logger.info("Disconnected from NATS")
 
@@ -156,18 +187,60 @@ class NATSFabric:
         """
         asyncio.create_task(self._subscribe_async(topic, handler))
 
-    async def subscribe_async(self, topic: str, handler: Callable[[dict], Any]) -> Subscription:
+    async def subscribe_async(self, topic: str, handler: Callable[[dict], Any], **limits) -> Subscription:
         """Same as subscribe(), but awaitable — guarantees subscription
         is active before returning. Prefer this in new code; subscribe()
         exists for drop-in compatibility with the in-memory Fabric's
         synchronous signature."""
-        return await self._subscribe_async(topic, handler)
+        return await self._subscribe_async(topic, handler, **limits)
 
-    async def _subscribe_async(self, topic: str, handler: Callable[[dict], Any]) -> Subscription:
+    async def _subscribe_async(self, topic: str, handler: Callable[[dict], Any],
+                               max_active=0, max_queued=0, max_queue_wait=15) -> Subscription:
         if self._nc is None:
             raise RuntimeError("NATSFabric.connect() must be called first")
 
+        semaphore = asyncio.Semaphore(max_active or 1)
+        admitted = 0
+        metrics = self.admission_metrics.setdefault(topic, {"accepted": 0, "busy": 0, "expired": 0, "inflight": 0})
+
+        async def invoke(envelope, deadline):
+            token = request_deadline.set(deadline)
+            try:
+                if deadline is not None and deadline <= time.time():
+                    metrics["expired"] += 1
+                    if envelope.get("respond"):
+                        await envelope["respond"]({"ok": False, "code": "expired", "error": "request expired before execution"})
+                    return
+                result = handler(envelope)
+                if asyncio.iscoroutine(result):
+                    await result
+            finally:
+                request_deadline.reset(token)
+
+        async def dispatch(envelope, deadline):
+            nonlocal admitted
+            acquired = False
+            try:
+                wait = min(max_queue_wait, deadline - time.time()) if deadline is not None else max_queue_wait
+                if wait <= 0:
+                    raise asyncio.TimeoutError()
+                await asyncio.wait_for(semaphore.acquire(), timeout=wait)
+                acquired = True
+                await invoke(envelope, deadline)
+            except asyncio.TimeoutError:
+                metrics["expired"] += 1
+                if envelope.get("respond"):
+                    await envelope["respond"]({"ok": False, "code": "expired", "error": "queue budget exhausted"})
+            except Exception:
+                logger.exception("Bounded request handler failed on %s", topic)
+            finally:
+                if acquired:
+                    semaphore.release()
+                admitted -= 1
+                metrics["inflight"] = admitted
+
         async def _on_message(msg: Msg) -> None:
+            nonlocal admitted
             try:
                 data = json.loads(msg.data.decode("utf-8"))
                 if not isinstance(data, dict):
@@ -182,11 +255,30 @@ class NATSFabric:
                     await _msg.respond(json.dumps(result).encode("utf-8"))
                 envelope["respond"] = _respond
 
-            result = handler(envelope)
-            if asyncio.iscoroutine(result):
-                await result
+            try:
+                supplied = data.get("expires_at_ms")
+                deadline = deadline_for(data, 120) if supplied is not None else None
+            except ValueError:
+                if envelope.get("respond"):
+                    await envelope["respond"]({"ok": False, "code": "invalid_deadline"})
+                return
+            if max_active:
+                if self._closing or admitted >= max_active + max_queued:
+                    metrics["busy"] += 1
+                    if envelope.get("respond"):
+                        await envelope["respond"]({"ok": False, "code": "busy", "error": "request capacity exhausted"})
+                    return
+                admitted += 1
+                metrics["accepted"] += 1
+                metrics["inflight"] = admitted
+                task = asyncio.create_task(dispatch(envelope, deadline))
+                self._dispatch_tasks.add(task)
+                task.add_done_callback(self._dispatch_tasks.discard)
+            else:
+                await invoke(envelope, deadline)
 
-        sub = await self._nc.subscribe(topic, cb=_on_message)
+        limits = {"pending_msgs_limit": 256, "pending_bytes_limit": 1024 * 1024} if max_active else {}
+        sub = await self._nc.subscribe(topic, cb=_on_message, **limits)
         # The NATS client owns subscriptions; do not retain expired auction handles.
         return sub
 
@@ -208,7 +300,11 @@ class NATSFabric:
             raise RuntimeError("NATSFabric.connect() must be called first")
 
         subject = f"capability.{capability}"
-        data = json.dumps(payload).encode("utf-8")
+        deadline = deadline_for(payload, timeout)
+        timeout = deadline - time.time()
+        if timeout <= 0:
+            return None
+        data = json.dumps({**payload, "expires_at_ms": deadline * 1000}).encode("utf-8")
         try:
             response: Msg = await self._nc.request(subject, data, timeout=timeout)
             return json.loads(response.data.decode("utf-8"))

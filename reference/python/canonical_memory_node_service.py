@@ -43,7 +43,7 @@ class CanonicalMemoryNode:
         self.fabric = NATSFabric(os.getenv("CAS_NATS_URL", "nats://localhost:4222"))
         self.qdrant = QdrantMemoryClient(os.getenv("CAS_QDRANT_URL", "http://localhost:6333"))
         self.embedder = OllamaEmbedder(
-            os.getenv("CAS_OLLAMA_URL", "http://localhost:11434"),
+            os.getenv("CAS_EMBED_URL", os.getenv("CAS_OLLAMA_URL", "http://localhost:11434")),
             os.getenv("CAS_EMBED_MODEL", "nomic-embed-text:latest"),
         )
         self.memory: MemoryFabric | None = None

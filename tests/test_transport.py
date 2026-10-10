@@ -49,6 +49,25 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             await NATSFabric().connect()
         self.assertEqual(connect.call_args.kwargs["servers"], "nats://example.invalid:4333")
 
+    async def test_credentials_in_url_rejected_without_secret_logging(self):
+        with patch("fabric_nats.nats.connect", AsyncMock()) as connect:
+            with self.assertRaisesRegex(ValueError, "must not contain credentials"):
+                await NATSFabric("nats://user:secret@localhost:4222").connect()
+            connect.assert_not_called()
+
+    async def test_auth_file_passes_credentials_without_logging_them(self):
+        import tempfile
+        import json
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)/"auth.json"
+            path.write_text(json.dumps({"user":"test-role","password":"private-test-secret"}))
+            with patch.dict(os.environ,{"CAS_NATS_AUTH_FILE":str(path)}), \
+                    patch("fabric_nats.nats.connect",AsyncMock(return_value=self.client)) as connect, \
+                    self.assertLogs("cas_fabric.nats",level="INFO") as logs:
+                await NATSFabric().connect()
+            self.assertEqual(connect.call_args.kwargs["user"],"test-role")
+            self.assertNotIn("private-test-secret"," ".join(logs.output))
+
     async def test_explicit_servers_override_environment(self):
         for servers in ("nats://explicit.invalid:4222", ["nats://one.invalid:4222", "nats://two.invalid:4222"]):
             with self.subTest(servers=servers), \

@@ -145,6 +145,22 @@ class GoalStoreTests(unittest.TestCase):
 
 
 class CoordinatorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_expired_auction_never_publishes_assignment(self):
+        import time
+        from request_budget import request_deadline
+        respond = AsyncMock()
+        token = request_deadline.set(time.time() + .01)
+        try:
+            await self.coordinator.handle_goal({"payload": {"intent": "Work",
+                "required_skills": ["memory.query"], "proposal_window_ms": 30}, "respond": respond})
+        finally:
+            request_deadline.reset(token)
+        result = respond.call_args.args[0]
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["goal"]["state"], "failed")
+        self.assertEqual([call.args[0] for call in self.coordinator.fabric.publish.call_args_list],
+                         ["goal.broadcast"])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
