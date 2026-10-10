@@ -29,6 +29,8 @@ def score(case, response):
 
 
 def fail_closed(response):
+    if not isinstance(response, dict):
+        response = {}
     if not response or response.get("ok") is not True or response.get("actions_allowed") is not False:
         return {"ok": False, "status": "needs_review", "output": "Verifikasi gagal; perlu tinjauan manusia.",
                 "sources": [], "actions_allowed": False,

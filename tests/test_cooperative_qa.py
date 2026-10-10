@@ -22,7 +22,7 @@ class VerificationTests(unittest.TestCase):
                     "reason": "x"}, {}, [{"source_id": "A"}])
 
     def test_verifier_loss_never_auto_approves(self):
-        for response in (None, {"ok": False}, {"ok": True, "actions_allowed": True}):
+        for response in (None, [], "invalid", {"ok": False}, {"ok": True, "actions_allowed": True}):
             result = fail_closed(response)
             self.assertEqual(result["status"], "needs_review")
             self.assertFalse(result["actions_allowed"])

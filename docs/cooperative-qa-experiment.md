@@ -31,3 +31,17 @@ unknown and injection cases are diagnostic, not independent statistical trials.
 A cooperative gain here needs fresh held-out operational QA and independent
 semantic/citation review before deployment. It establishes only a limited
 composition benefit if measured quality improves without unacceptable regressions.
+
+## Development result, 2026-10-10
+
+The authenticated 17-case paired replay at source e918379 scored 8/17 for the
+archived baseline and 6/17 after verification. OPQA-6 improved, while OPQA-13,
+OPQA-14 and CONTROL-injection-0 regressed. Ten verifier responses failed
+validation. All 17 additional model requests completed; verification added
+587.19 seconds total (34.54 seconds per case) on the CPU-only provider.
+The real verifier-unavailability probe returned review with no action allowed.
+These lexical development diagnostics reject adoption of this model composition;
+safe failure is not a quality pass. The pilot remains held. Source e918379 is
+the measured implementation; subsequent non-object response hardening does not
+change these scores. The earlier run had no authenticated subscriber and is an
+invalid transport attempt, not a model-quality result.
