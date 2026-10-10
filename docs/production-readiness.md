@@ -25,6 +25,12 @@ cannot release capacity merely because its client stopped waiting.
 `admission_metrics` exposes accepted, busy, expired and in-flight counts by subject.
 Metrics contain no prompts. Final workload/latency/quality/restore gates are separate.
 
+Reflection retains aggregate skill statistics and worker-scoped execution scores.
+Auctions use the latter so one worker's history cannot raise every peer's score.
+These scores measure execution status, not semantic answer correctness; valid
+abstention is not independent quality evidence. See `docs/cas-evidence.md` for the
+distinction between runtime contracts and the unproven broader CAS thesis.
+
 ## Authenticated internal profile
 
 Run `scripts/prepare_internal_profile.py /private/new-directory` to create distinct

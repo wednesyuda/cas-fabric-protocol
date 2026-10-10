@@ -13,12 +13,16 @@ class ProbeWorker(AuctionWorker):
         self.skill_manifests = manifests_for_skills(self.skills)
         self.estimated_latency_ms = latency
         self.calls = []
+        self.fail_next_echo = False
         self.started = asyncio.Event()
         self.release = asyncio.Event()
         self.finished = asyncio.Event()
 
     async def execute_skill(self, skill, intent):
         self.calls.append((skill, intent))
+        if skill == "release.echo" and self.fail_next_echo:
+            self.fail_next_echo = False
+            return {"ok": False, "error": "controlled executor failure"}
         if skill == "release.block":
             self.started.set()
             await self.release.wait()
