@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from document_verifier_node import checked_response, handle, verification_schema, verifier_options, generate, evidence_view, checked_excerpts
+from document_verifier_node import checked_response, handle, verification_schema, verifier_options, generate, evidence_view
 from evaluate_cooperative_qa import fail_closed, score
 from evaluate_verifier_decisions import score_decision
 import evaluate_verifier_decisions
@@ -59,40 +59,14 @@ class VerificationTests(unittest.TestCase):
     def test_verifier_explicitly_disables_thinking_and_preserves_gpu_option(self):
         body = {"message": {"content": '{"decision":"abstain","answer":"Tidak tersedia.","sources":[],"reason":"Tidak ada bukti."}'},
                 "prompt_eval_count": 12, "eval_count": 10}
-        excerpt = {"message": {"content": '{"excerpts":[]}'}, "prompt_eval_count": 2, "eval_count": 3}
         with patch.dict(os.environ, {"CAS_VERIFIER_URL": "http://127.0.0.1:21437", "CAS_VERIFIER_NUM_GPU": "-1"}), \
-             patch("experiment_inference.urllib.request.urlopen", side_effect=[io.BytesIO(json.dumps(excerpt).encode()), io.BytesIO(json.dumps(body).encode())]) as provider:
+             patch("experiment_inference.urllib.request.urlopen", return_value=io.BytesIO(json.dumps(body).encode())) as provider:
             result, tokens = generate("Pertanyaan?", {"abstain": True}, [{"source_id": "A", "text": "Other facts."}])
         payload = json.loads(provider.call_args.args[0].data)
         self.assertIs(payload["think"], False)
         self.assertEqual(payload["options"]["num_gpu"], -1)
         self.assertEqual(result["decision"], "abstain")
-        self.assertEqual(tokens["output_tokens"], 13)
-        self.assertEqual(tokens["model_requests"], 2)
-
-    def test_grounding_is_candidate_blind_and_shares_deadline_with_verifier(self):
-        from request_budget import request_deadline
-        candidate = {"answer": "Candidate assertion", "sources": [], "abstain": True}
-        evidence = [{"source_id": "A", "text": "Exact evidence fact."}]
-        deadlines = []
-        calls = []
-        def infer(url, backend, model, messages, schema, options):
-            deadlines.append(request_deadline.get())
-            calls.append(messages)
-            if len(calls) == 1:
-                return json.dumps({"excerpts": [{"source_id": "A", "quote": "Exact evidence fact."}]}), {"prompt_tokens": 1, "output_tokens": 2}
-            return json.dumps({"decision": "revise", "answer": "Exact evidence fact.", "sources": ["A"], "reason": "A contains the fact."}), {"prompt_tokens": 3, "output_tokens": 4}
-        before = request_deadline.get()
-        with patch.dict(os.environ, {"CAS_VERIFIER_URL": "http://127.0.0.1:21440"}), \
-             patch("document_verifier_node.complete", side_effect=infer):
-            result, tokens = generate("Question?", candidate, evidence)
-        self.assertNotIn("candidate", json.loads(calls[0][1]["content"]))
-        self.assertEqual(json.loads(calls[1][1]["content"])["candidate"], candidate)
-        self.assertIsNotNone(deadlines[0])
-        self.assertEqual(deadlines[0], deadlines[1])
-        self.assertEqual(request_deadline.get(), before)
-        self.assertEqual(tokens["output_tokens"], 6)
-        self.assertEqual(tokens["model_requests"], 2)
+        self.assertEqual(tokens["output_tokens"], 10)
 
     def test_gpu_verification_requires_explicit_opt_in(self):
         with patch.dict(os.environ, {}, clear=True):
@@ -118,13 +92,16 @@ class VerificationTests(unittest.TestCase):
             self.assertTrue(summary["aborted_transport_failure"])
             self.assertEqual(summary["pilot_gate"], "hold")
 
-    def test_untrusted_excerpt_cannot_invent_or_borrow_a_source(self):
-        evidence = [{"source_id": "A", "text": "alpha beta gamma"}]
-        good = {"excerpts": [{"source_id": "A", "quote": "beta gamma"}]}
-        self.assertEqual(checked_excerpts(json.dumps(good), evidence), good["excerpts"])
-        for source, quote in (("B", "beta"), ("A", "delta"), ("A", "")):
-            with self.subTest(source=source, quote=quote), self.assertRaises(ValueError):
-                checked_excerpts(json.dumps({"excerpts": [{"source_id": source, "quote": quote}]}), evidence)
+    def test_verifier_choices_keep_citation_validation_at_response_boundary(self):
+        evidence = [{"source_id": "A"}]
+        schema = verification_schema({"abstain": True}, evidence)
+        self.assertEqual(schema["properties"]["sources"]["items"]["enum"], ["A"])
+        self.assertEqual(set(schema["properties"]["decision"]["enum"]),
+                         {"accept", "revise", "abstain", "needs_review"})
+        for decision, sources in (("revise", []), ("abstain", ["A"]), ("needs_review", ["A"])):
+            with self.subTest(decision=decision), self.assertRaises(ValueError):
+                checked_response({"decision": decision, "answer": "x", "sources": sources,
+                                  "reason": "x"}, {"abstain": True}, evidence)
 
     def test_evidence_view_preserves_all_original_text_and_final_alternative(self):
         text = "Nama pertama alpha. Pilihan lain beta. Jika gamma, bagaimana?"
