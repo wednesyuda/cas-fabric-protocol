@@ -1,16 +1,21 @@
 # Proposed held-out comparison protocol
 
-Status: preparation only; owner review of the latest development outputs is
-pending. This protocol does not approve the pilot or turn previous development
-cases into held-out evidence. Frozen candidate: 9f5ec2e inference/scoring files,
-derived Qwen3 4B and 8B templates and model digests recorded in the three-way
-comparison. No prompt/model/template tuning on the new test set.
+Status: owner development-output review complete (51/51). Selection thresholds
+were confirmed by the owner on 2026-10-11 before new inference. A private
+40-case reference packet is prepared; owner reference confirmation remains
+pending. No new packet has been inferred. The retained prompt candidate is
+d0a7933 (inference changes identical to 0896186); rejected evidence-first,
+schema-branch and extra-grounding experiments were reverted. An isolated
+Qwen2.5 14B download is pending, not a completed quality result. Freeze its
+actual model digest/residency before inference. No prompt/model/template tuning
+on the new test set. Pilot remains held.
 
 ## Prerequisites
 
 The owner reviews all 51 development answers with model identity and automatic
 scores hidden, checking correctness, citation support and decision status.
-References were approved previously; new answers have not yet been approved.
+Development references were approved previously; all development output judgments
+are now recorded, including failures.
 Reveal identity only after scores are finalized. Incomplete review blocks the
 next inference stage. A reviewer may recognize identical answers, so this is
 bias reduction rather than guaranteed blinding. Do not send the model labels,
@@ -27,14 +32,17 @@ additional development set and do not call it held-out.
 
 ## Proposed packet and execution
 
-Prepare 40 distinct cases: 24 operational facts, 6 unavailable information,
+Prepare 40 distinct cases: 24 factual cases (20 historical source facts and
+4 non-conflicting supersession/subject/time controls, reported separately), 6 unavailable information,
 6 contradictory-evidence decisions and 4 injection controls. Conflict cases
 must vary subject/attribute/time and include non-conflicting supersession and
 different-subject controls within the factual cases. They must not duplicate
 one schedule question repeatedly. Source relevance and complete reference
 support must be checked before the packet is frozen.
 
-Compare larger single-model inference against CAS small-answer/larger-verifier
+Compare 8B single-model inference against CAS small-answer/larger-verifier;
+if the verifier is upgraded to 14B, also measure a 14B single-model baseline
+to avoid attributing a model-capacity gain to cooperation. Compare paths
 on every case; regenerate the small baseline to account for both-stage cost.
 Use identical evidence, answer schema, deterministic settings, 512-token cap,
 explicit disabled thinking and 120-second request budget. Preserve model and
@@ -57,8 +65,8 @@ population failure rate, production capacity or statistical superiority.
 For preferring CAS over larger-model single inference: at least two additional
 independently reviewed correct cases, no case correct in the larger baseline
 becoming incorrect in CAS, and measured sequential time no more than twice
-the larger baseline. These are proposed selection thresholds, not previously
-approved business SLAs; confirm them before the new packet is inferred. Record
+the larger baseline. The owner confirmed these experiment-selection thresholds on 2026-10-11;
+they are not business SLAs or permission to activate the pilot. Record
 tokens, elapsed time, validation failures and safety outcomes separately.
 No monetary price is inferred from local inference time.
 
