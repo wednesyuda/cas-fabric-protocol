@@ -17,6 +17,8 @@ import signal
 import urllib.request
 
 from fabric_nats import NATSFabric
+from request_budget import remaining
+from document_answer import RULE, answer_schema, evidence_for, validate_answer
 
 
 LOGGER = logging.getLogger("cas_fabric.reasoning_node")
@@ -25,7 +27,20 @@ OLLAMA_URL = os.getenv("CAS_OLLAMA_URL", "http://localhost:11434")
 MODEL = os.getenv("CAS_REASONING_MODEL", "local-reasoning-model")
 
 
+def document_generate(evidence, intent):
+    payload = {"model": MODEL, "stream": False, "think": False, "format": answer_schema(evidence),
+               "messages": [{"role": "system", "content": RULE},
+                            {"role": "user", "content": json.dumps({"documents": evidence, "question": intent}, ensure_ascii=False)}],
+               "options": {"temperature": 0, "seed": 42, "num_predict": 384, "num_ctx": 4096}}
+    req = urllib.request.Request(OLLAMA_URL + "/api/chat", data=json.dumps(payload).encode(),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=remaining(120)) as response:
+        result = json.load(response)
+    return result.get("message", {}).get("content", "")
+
+
 def ollama_generate(prompt: str) -> str:
+    timeout = remaining(120)
     data = json.dumps(
         {
             "model": MODEL,
@@ -43,7 +58,7 @@ def ollama_generate(prompt: str) -> str:
         method="POST",
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=120) as response:
+    with urllib.request.urlopen(req, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
     return str(payload.get("response", "")).strip()
 
@@ -51,10 +66,11 @@ def ollama_generate(prompt: str) -> str:
 class ReasoningNode:
     def __init__(self) -> None:
         self.fabric = NATSFabric()
+        self.document_mode = os.getenv("CAS_DOCUMENT_QA", "0") == "1"
 
     async def start(self) -> None:
         await self.fabric.connect()
-        await self.fabric.subscribe_async("capability.reasoning.llm", self.handle_reasoning)
+        await self.fabric.subscribe_async("capability.reasoning.llm", self.handle_reasoning, max_active=1, max_queued=2, max_queue_wait=15)
         LOGGER.info("Reasoning node ready: model=%s", MODEL)
 
     async def handle_reasoning(self, message: dict) -> None:
@@ -87,6 +103,26 @@ class ReasoningNode:
 
             prepared_context = prepared.get("prepared_context", {})
             relevant_semantic = prepared_context.get("relevant_semantic", [])
+            if self.document_mode:
+                evidence = evidence_for(relevant_semantic)
+                if prepared.get("constraints", {}).get("requires_human_review"):
+                    answer = {"answer": "Permintaan memerlukan tinjauan manusia.", "sources": [], "abstain": True}
+                    status = "needs_review"
+                elif not evidence:
+                    answer = {"answer": "Informasi tidak tersedia dalam dokumen.", "sources": [], "abstain": True}
+                    status = "abstain"
+                else:
+                    raw = await asyncio.to_thread(document_generate, evidence, intent)
+                    remaining()
+                    answer = validate_answer(raw, evidence)
+                    status = "needs_review" if answer.get("needs_review") else "abstain" if answer["abstain"] else "answer"
+                result = {"ok": True, "type": "reasoning.response", "request_id": prepared.get("request_id"),
+                          "model": MODEL, "status": status, "output": answer["answer"],
+                          "sources": answer["sources"], "evidence": evidence, "reasoning_request": prepared,
+                          "memory_results": relevant_semantic, "actions_allowed": False}
+                if respond:
+                    await respond(result)
+                return
             context_lines = []
             for item in relevant_semantic:
                 content = item.get("content")
@@ -102,7 +138,9 @@ class ReasoningNode:
                 f"Intent:\n{intent}\n\n"
                 "Answer:"
             )
+            remaining()
             output = await asyncio.to_thread(ollama_generate, prompt)
+            remaining()
             if not output:
                 raise RuntimeError("model returned empty output")
             result = {

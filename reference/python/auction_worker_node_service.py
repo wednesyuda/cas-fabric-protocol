@@ -34,7 +34,9 @@ class AuctionWorker:
         self.estimated_latency_ms = int(os.environ.get("CAS_WORKER_LATENCY_MS", "100"))
         self.current_load = float(os.environ.get("CAS_WORKER_LOAD", "0.1"))
         self.skill_manifests = manifests_for_skills(self.skills)
-        self.execution_capability = "auction.execute." + uuid.uuid4().hex
+        if not self.node_id or any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_" for ch in self.node_id):
+            raise ValueError("worker ID must be a safe NATS subject token")
+        self.execution_capability = "auction.execute." + self.node_id + "." + uuid.uuid4().hex
         self.assignments: OrderedDict[str, dict] = OrderedDict()
 
     async def start(self) -> None:

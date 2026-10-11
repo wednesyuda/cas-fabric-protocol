@@ -61,6 +61,14 @@ async def resilience(coordinator, restart, containers):
         assert routed["assignments"][0]["node_id"] == winner.node_id
         assert routed["execution"][0]["response"]["output"] == winner.node_id
         assert len(winner.calls) == 1 and not loser.calls
+        winner.fail_next_echo = True
+        failed = await fabric.request("goal.submit", {"intent": "Learn actual worker failure",
+            "required_skills": ["release.echo"], "proposal_window_ms": 200}, timeout=10)
+        assert not failed["ok"] and failed["assignments"][0]["node_id"] == winner.node_id
+        adapted = await fabric.request("goal.submit", {"intent": "Adapt after worker failure",
+            "required_skills": ["release.echo"], "proposal_window_ms": 200}, timeout=10)
+        assert adapted["ok"] and adapted["assignments"][0]["node_id"] == loser.node_id
+        assert adapted["execution"][0]["response"]["output"] == loser.node_id
         block = await fabric.request("goal.create", {"intent": "Actual blocked execution",
             "required_skills": ["release.block"]})
         interrupted_id = block["goal"]["goal_id"]
@@ -111,7 +119,8 @@ async def resilience(coordinator, restart, containers):
                 "unavailable_capability": "None", "unassigned_goal": "failed",
                 "coordinator_restart_preserved_goal": True, "interrupted_goal_failed_without_replay": True,
                 "actual_worker_interruption": True, "late_worker_result_preserves_failed_goal": True,
-                "two_worker_selection_and_execution": True, "losing_worker_execution_count": 0,
+                "two_worker_selection_and_execution": True, "initial_losing_worker_execution_count": 0,
+                "worker_failure_changes_next_assignment": True,
                 "vector_store_restart_preserved_memory": True, "bus_restart_recovered_subscriptions": True}
     finally:
         winner.release.set()
@@ -195,7 +204,7 @@ def main():
         coordinator = launch(str(PYREF / "task_coordinator_service.py"))
         for skill in ("memory.query", "reasoning.llm"):
             launch(str(PYREF / "auction_worker_node_service.py"), {
-                "CAS_WORKER_ID": "release-worker-" + skill, "CAS_WORKER_SKILLS": skill})
+                "CAS_WORKER_ID": "release-worker-" + skill.replace(".", "-"), "CAS_WORKER_SKILLS": skill})
         asyncio.run(ready())
         with (run / "compliance.log").open("w") as stream:
             subprocess.run([sys.executable, str(PYREF / "verify_compliance_runtime.py")],

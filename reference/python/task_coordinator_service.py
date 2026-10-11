@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any
 
 from fabric_nats import NATSFabric
+from request_budget import remaining
+from state_lock import StateLocks
 from skill_genome import retention_update
 
 
@@ -160,10 +162,8 @@ class ReflectionStore:
     def save(self) -> None:
         save_json(self.path, self.skills)
 
-    def status(self, skill_id: str) -> dict[str, Any]:
-        return self.skills.get(
-            skill_id,
-            {
+    def status(self, skill_id: str, node_id: str | None = None) -> dict[str, Any]:
+        default = {
                 "type": "skill.reflection_status",
                 "protocol": REFLECTION_PROTOCOL_VERSION,
                 "skill_id": skill_id,
@@ -174,8 +174,11 @@ class ReflectionStore:
                 "last_goal_id": None,
                 "last_outcome": None,
                 "lifecycle_recommendation": "observe",
-            },
-        )
+            }
+        status = self.skills.get(skill_id, default)
+        if node_id is not None:
+            return status.get("nodes", {}).get(node_id, {**default, "node_id": node_id})
+        return status
 
     def record_execution(self, goal_id: str, execution: list[dict[str, Any]]) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
@@ -198,7 +201,24 @@ class ReflectionStore:
                 "last_goal_id": goal_id,
                 "last_outcome": "success" if success else "failure",
                 "lifecycle_recommendation": "prefer" if updated >= 0.6 else "observe" if updated >= 0.3 else "deprioritize",
+                "score_basis": "execution_status_not_answer_correctness",
             }
+            node_id = item.get("node_id")
+            if isinstance(node_id, str) and node_id:
+                nodes = status.setdefault("nodes", {})
+                node = nodes.get(node_id, self.status(skill_id, node_id))
+                node_updated = min(1.0, max(0.0, float(node["adaptive_confidence"]) + delta))
+                nodes[node_id] = {
+                    **node,
+                    "attempt_count": int(node["attempt_count"]) + 1,
+                    "success_count": int(node["success_count"]) + int(success),
+                    "failure_count": int(node["failure_count"]) + int(not success),
+                    "adaptive_confidence": round(node_updated, 3),
+                    "last_goal_id": goal_id,
+                    "last_outcome": "success" if success else "failure",
+                    "lifecycle_recommendation": "prefer" if node_updated >= 0.6 else "observe" if node_updated >= 0.3 else "deprioritize",
+                    "score_basis": "execution_status_not_answer_correctness",
+                }
             skills[skill_id] = status
             events.append(
                 {
@@ -223,8 +243,18 @@ class TaskCoordinator:
         self.fabric = NATSFabric()
         self.goals = GoalStore()
         self.reflections = ReflectionStore()
+        self.state_locks = StateLocks([self.goals.path, self.reflections.path])
 
     async def start(self) -> None:
+        self.state_locks.acquire()
+        try:
+            await self._start()
+        except BaseException:
+            self.state_locks.close()
+            await self.fabric.close()
+            raise
+
+    async def _start(self) -> None:
         self.goals.load()
         self.goals.recover_inflight()
         self.reflections.load()
@@ -234,7 +264,7 @@ class TaskCoordinator:
         await self.fabric.subscribe_async("capability.goal.update", self.handle_goal_update)
         await self.fabric.subscribe_async("capability.goal.complete", self.handle_goal_complete)
         await self.fabric.subscribe_async("capability.reflection.status", self.handle_reflection_status)
-        await self.fabric.subscribe_async("capability.goal.submit", self.handle_goal)
+        await self.fabric.subscribe_async("capability.goal.submit", self.handle_goal, max_active=1, max_queued=2, max_queue_wait=15)
         LOGGER.info("Task coordinator ready: capability=goal.submit")
 
     async def handle_goal_create(self, message: dict) -> None:
@@ -304,7 +334,7 @@ class TaskCoordinator:
         payload = message.get("payload", {})
         try:
             skill_id = str(payload["skill_id"])
-            result = {"ok": True, "reflection": self.reflections.status(skill_id)}
+            result = {"ok": True, "reflection": self.reflections.status(skill_id, payload.get("node_id"))}
         except Exception as exc:
             result = {"ok": False, "error": str(exc)}
         if respond:
@@ -367,13 +397,14 @@ class TaskCoordinator:
                 },
             )
             await asyncio.sleep(window / 1000.0)
+            remaining()
             closed_subscription = subscription
             subscription = None
             await closed_subscription.unsubscribe()
             valid_proposals = self.validate_proposals(goal_id, required_skills, proposals)
             for proposal in valid_proposals:
                 scores = [
-                    float(self.reflections.status(skill).get("adaptive_confidence", 0.5))
+                    float(self.reflections.status(skill, proposal["node_id"]).get("adaptive_confidence", 0.5))
                     for skill in proposal.get("skills_offered", [])
                 ]
                 proposal["adaptive_confidence"] = round(sum(scores) / len(scores), 3) if scores else 0.5
@@ -607,7 +638,10 @@ class TaskCoordinator:
         return results
 
     async def close(self) -> None:
-        await self.fabric.close()
+        try:
+            await self.fabric.close()
+        finally:
+            self.state_locks.close()
 
 
 async def main() -> None:

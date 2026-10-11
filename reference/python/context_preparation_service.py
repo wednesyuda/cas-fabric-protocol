@@ -131,6 +131,7 @@ class ContextPreparationNode:
                 semantic.append(
                     {
                         "content": item.get("content"),
+                        "memory_id": item.get("memory_id"),
                         "score": item.get("score"),
                         "source": item.get("source"),
                         "memory_type": item.get("memory_type", "semantic"),

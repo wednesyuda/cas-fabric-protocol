@@ -145,6 +145,44 @@ class GoalStoreTests(unittest.TestCase):
 
 
 class CoordinatorTests(unittest.IsolatedAsyncioTestCase):
+    def test_worker_outcomes_change_next_auction_and_survive_reload(self):
+        store = self.coordinator.reflections
+        store.record_execution("first", [{"skill": "probe", "node_id": "fast-failed", "ok": False},
+                                         {"skill": "probe", "node_id": "slow-success", "ok": True}])
+        restored = ReflectionStore(str(store.path))
+        restored.load()
+        proposals = [{"node_id": node, "skills_offered": ["probe"],
+                      "estimated_latency_ms": latency, "current_load": 0,
+                      "adaptive_confidence": restored.status("probe", node)["adaptive_confidence"]}
+                     for node, latency in (("fast-failed", 1), ("slow-success", 100))]
+        selected = TaskCoordinator.resolve_assignments("next", ["probe"], proposals)
+        self.assertEqual(selected[0]["node_id"], "slow-success")
+        self.assertEqual(restored.status("probe", "unseen")["adaptive_confidence"], .5)
+        self.assertEqual(restored.status("probe")["attempt_count"], 2)
+        self.assertEqual(restored.status("probe", "slow-success")["attempt_count"], 1)
+
+    def test_legacy_aggregate_does_not_transfer_success_to_unknown_worker(self):
+        store = self.coordinator.reflections
+        store.record_execution("legacy", [{"skill": "probe", "ok": True}])
+        self.assertEqual(store.status("probe")["adaptive_confidence"], .55)
+        self.assertEqual(store.status("probe", "new-worker")["adaptive_confidence"], .5)
+
+    async def test_expired_auction_never_publishes_assignment(self):
+        import time
+        from request_budget import request_deadline
+        respond = AsyncMock()
+        token = request_deadline.set(time.time() + .01)
+        try:
+            await self.coordinator.handle_goal({"payload": {"intent": "Work",
+                "required_skills": ["memory.query"], "proposal_window_ms": 30}, "respond": respond})
+        finally:
+            request_deadline.reset(token)
+        result = respond.call_args.args[0]
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["goal"]["state"], "failed")
+        self.assertEqual([call.args[0] for call in self.coordinator.fabric.publish.call_args_list],
+                         ["goal.broadcast"])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -229,7 +267,7 @@ class CoordinatorTests(unittest.IsolatedAsyncioTestCase):
 
     def test_reflection_save_failure_preserves_memory_and_disk(self):
         reflections = self.coordinator.reflections
-        execution = [{"skill": "memory.query", "ok": True}]
+        execution = [{"skill": "memory.query", "node_id": "node-a", "ok": True}]
         reflections.record_execution("first", execution)
         before = copy.deepcopy(reflections.skills)
         disk = reflections.path.read_bytes()

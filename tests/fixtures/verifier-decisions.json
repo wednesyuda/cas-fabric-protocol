@@ -1,0 +1,219 @@
+{
+  "scope": "synthetic development decision diagnostics; references authored before model run, not independent held-out review",
+  "cases": [
+    {
+      "id": "conflict-abstaining-candidate",
+      "question": "Kapan inspeksi mesin X dijadwalkan minggu ini?",
+      "candidate": {
+        "answer": "Informasi tidak tersedia.",
+        "sources": [],
+        "abstain": true,
+        "needs_review": false
+      },
+      "evidence": [
+        {
+          "source_id": "A",
+          "text": "Inspeksi mesin X minggu ini dijadwalkan Senin."
+        },
+        {
+          "source_id": "B",
+          "text": "Inspeksi mesin X minggu ini dijadwalkan Jumat."
+        }
+      ],
+      "expected_status": "needs_review",
+      "required_terms": [
+        "senin",
+        "jumat"
+      ],
+      "expected_sources": []
+    },
+    {
+      "id": "conflict-reversed-order",
+      "question": "Kapan inspeksi mesin X dijadwalkan minggu ini?",
+      "candidate": {
+        "answer": "Inspeksi dijadwalkan Jumat.",
+        "sources": [
+          "B"
+        ],
+        "abstain": false,
+        "needs_review": false
+      },
+      "evidence": [
+        {
+          "source_id": "B",
+          "text": "Inspeksi mesin X minggu ini dijadwalkan Jumat."
+        },
+        {
+          "source_id": "A",
+          "text": "Inspeksi mesin X minggu ini dijadwalkan Senin."
+        }
+      ],
+      "expected_status": "needs_review",
+      "required_terms": [
+        "senin",
+        "jumat"
+      ],
+      "expected_sources": []
+    },
+    {
+      "id": "conflict-quantity",
+      "question": "Berapa jumlah paket pesanan R-17?",
+      "candidate": {
+        "answer": "Jumlahnya 12 paket.",
+        "sources": [
+          "A"
+        ],
+        "abstain": false,
+        "needs_review": false
+      },
+      "evidence": [
+        {
+          "source_id": "A",
+          "text": "Pesanan R-17 berisi 12 paket."
+        },
+        {
+          "source_id": "B",
+          "text": "Pesanan R-17 berisi 20 paket. Tidak ada catatan revisi pesanan."
+        }
+      ],
+      "expected_status": "needs_review",
+      "required_terms": [
+        "12",
+        "20"
+      ],
+      "expected_sources": []
+    },
+    {
+      "id": "agreeing-evidence",
+      "question": "Kapan inspeksi mesin X minggu ini?",
+      "candidate": {
+        "answer": "Inspeksi mesin X minggu ini Senin.",
+        "sources": [
+          "A"
+        ],
+        "abstain": false,
+        "needs_review": false
+      },
+      "evidence": [
+        {
+          "source_id": "A",
+          "text": "Inspeksi mesin X minggu ini Senin."
+        },
+        {
+          "source_id": "B",
+          "text": "Jadwal minggu ini: mesin X diinspeksi Senin."
+        }
+      ],
+      "expected_status": "answer",
+      "required_terms": [
+        "senin"
+      ],
+      "expected_sources": [
+        "A",
+        "B"
+      ]
+    },
+    {
+      "id": "different-subjects",
+      "question": "Kapan inspeksi mesin X minggu ini?",
+      "candidate": {
+        "answer": "Inspeksi mesin X Senin.",
+        "sources": [
+          "A"
+        ],
+        "abstain": false,
+        "needs_review": false
+      },
+      "evidence": [
+        {
+          "source_id": "A",
+          "text": "Inspeksi mesin X minggu ini Senin."
+        },
+        {
+          "source_id": "B",
+          "text": "Inspeksi mesin Y minggu ini Jumat."
+        }
+      ],
+      "expected_status": "answer",
+      "required_terms": [
+        "senin"
+      ],
+      "expected_sources": [
+        "A"
+      ]
+    },
+    {
+      "id": "explicit-correction",
+      "question": "Kapan inspeksi mesin X minggu ini menurut jadwal terbaru?",
+      "candidate": {
+        "answer": "Inspeksi mesin X Senin.",
+        "sources": [
+          "A"
+        ],
+        "abstain": false,
+        "needs_review": false
+      },
+      "evidence": [
+        {
+          "source_id": "A",
+          "text": "Versi awal: inspeksi mesin X minggu ini Senin."
+        },
+        {
+          "source_id": "B",
+          "text": "Koreksi resmi untuk minggu ini: inspeksi mesin X dipindah dari Senin ke Jumat. Koreksi ini menggantikan versi awal."
+        }
+      ],
+      "expected_status": "answer",
+      "required_terms": [
+        "jumat"
+      ],
+      "expected_sources": [
+        "B"
+      ]
+    },
+    {
+      "id": "correctable-candidate",
+      "question": "Berapa jumlah paket pesanan R-17?",
+      "candidate": {
+        "answer": "Jumlahnya 20 paket.",
+        "sources": [
+          "A"
+        ],
+        "abstain": false,
+        "needs_review": false
+      },
+      "evidence": [
+        {
+          "source_id": "A",
+          "text": "Pesanan R-17 berisi 12 paket."
+        }
+      ],
+      "expected_status": "answer",
+      "required_terms": [
+        "12"
+      ],
+      "expected_sources": [
+        "A"
+      ]
+    },
+    {
+      "id": "missing-information",
+      "question": "Siapa penandatangan SOP inspeksi yang disahkan?",
+      "candidate": {
+        "answer": "Informasi tidak tersedia.",
+        "sources": [],
+        "abstain": true,
+        "needs_review": false
+      },
+      "evidence": [
+        {
+          "source_id": "A",
+          "text": "Diskusi hanya mengusulkan inspeksi mesin X pada Senin. Belum ada SOP yang disahkan."
+        }
+      ],
+      "expected_status": "abstain",
+      "required_terms": [],
+      "expected_sources": []
+    }
+  ]
+}

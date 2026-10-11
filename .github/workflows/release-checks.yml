@@ -15,6 +15,8 @@ jobs:
       - run: make check
       - run: python -m pip_audit -r reference/python/requirements.lock --no-deps --disable-pip --format json --output dependency-audit.json
       - run: python scripts/verify_release.py
+      - run: python scripts/verify_internal_runtime.py
+      - run: python scripts/verify_restore_runtime.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         if: always()
         with:
