@@ -92,18 +92,16 @@ class VerificationTests(unittest.TestCase):
             self.assertTrue(summary["aborted_transport_failure"])
             self.assertEqual(summary["pilot_gate"], "hold")
 
-    def test_schema_constrains_sources_by_decision(self):
-        for abstain in (False, True):
-            schema = verification_schema({"abstain": abstain}, [{"source_id": "A"}])
-            for variant in schema["anyOf"]:
-                props = variant["properties"]
-                decision = props["decision"]["enum"][0]
-                sources = props["sources"]
-                if decision in ("abstain", "needs_review") or (decision == "accept" and abstain):
-                    self.assertEqual(sources["maxItems"], 0)
-                else:
-                    self.assertEqual(sources["minItems"], 1)
-                self.assertEqual(sources["items"]["enum"], ["A"])
+    def test_verifier_choices_keep_citation_validation_at_response_boundary(self):
+        evidence = [{"source_id": "A"}]
+        schema = verification_schema({"abstain": True}, evidence)
+        self.assertEqual(schema["properties"]["sources"]["items"]["enum"], ["A"])
+        self.assertEqual(set(schema["properties"]["decision"]["enum"]),
+                         {"accept", "revise", "abstain", "needs_review"})
+        for decision, sources in (("revise", []), ("abstain", ["A"]), ("needs_review", ["A"])):
+            with self.subTest(decision=decision), self.assertRaises(ValueError):
+                checked_response({"decision": decision, "answer": "x", "sources": sources,
+                                  "reason": "x"}, {"abstain": True}, evidence)
 
     def test_accept_cannot_silently_replace_candidate(self):
         candidate = {"answer": "Original", "sources": ["A"], "abstain": False}
