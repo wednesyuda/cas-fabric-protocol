@@ -2,7 +2,6 @@
 import asyncio
 import json
 import os
-import re
 from pathlib import Path
 import signal
 import sys
@@ -42,8 +41,6 @@ RULE = ("Independently verify an answer against the supplied evidence and questi
         "not approved current SOP. Before choosing a decision, use reason to identify the relevant "
         "source IDs and exact evidence facts that answer the question, or the specific missing facts "
         "or incompatible claims. Evaluate this evidence independently before comparing the candidate. "
-        "All alternatives across every sentence matter; names may be lowercase. Read the complete "
-        "utterance before declaring a requested item missing. "
         "Return JSON in this order: reason, answer, sources, decision. Indonesian.")
 
 
@@ -89,16 +86,10 @@ def verifier_options():
             "num_ctx": 4096, "num_gpu": num_gpu, "num_thread": 2}
 
 
-def evidence_view(evidence):
-    """Expose sentence boundaries without dropping the original source text."""
-    return [{**item, "sentences": [part for part in re.split(r"(?<=[.!?])\s+|\n+", item["text"]) if part.strip()]}
-            for item in evidence]
-
-
 def generate(question, candidate, evidence):
     schema = verification_schema(candidate, evidence)
     messages = [{"role": "system", "content": RULE + " Output schema: " + json.dumps(schema)},
-                {"role": "user", "content": json.dumps({"question": question, "evidence": evidence_view(evidence),
+                {"role": "user", "content": json.dumps({"question": question, "evidence": evidence,
                                                          "candidate": candidate}, ensure_ascii=False)}]
     content, tokens = complete(os.environ["CAS_VERIFIER_URL"], os.environ.get("CAS_VERIFIER_BACKEND", "ollama"),
         os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b"), messages, schema, verifier_options())

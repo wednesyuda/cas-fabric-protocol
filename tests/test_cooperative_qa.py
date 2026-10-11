@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from document_verifier_node import checked_response, handle, verification_schema, verifier_options, generate, evidence_view
+from document_verifier_node import checked_response, handle, verification_schema, verifier_options, generate
 from evaluate_cooperative_qa import fail_closed, score
 from evaluate_verifier_decisions import score_decision
 import evaluate_verifier_decisions
@@ -61,7 +61,7 @@ class VerificationTests(unittest.TestCase):
                 "prompt_eval_count": 12, "eval_count": 10}
         with patch.dict(os.environ, {"CAS_VERIFIER_URL": "http://127.0.0.1:21437", "CAS_VERIFIER_NUM_GPU": "-1"}), \
              patch("experiment_inference.urllib.request.urlopen", return_value=io.BytesIO(json.dumps(body).encode())) as provider:
-            result, tokens = generate("Pertanyaan?", {"abstain": True}, [{"source_id": "A", "text": "Other facts."}])
+            result, tokens = generate("Pertanyaan?", {"abstain": True}, [{"source_id": "A"}])
         payload = json.loads(provider.call_args.args[0].data)
         self.assertIs(payload["think"], False)
         self.assertEqual(payload["options"]["num_gpu"], -1)
@@ -102,15 +102,6 @@ class VerificationTests(unittest.TestCase):
             with self.subTest(decision=decision), self.assertRaises(ValueError):
                 checked_response({"decision": decision, "answer": "x", "sources": sources,
                                   "reason": "x"}, {"abstain": True}, evidence)
-
-    def test_evidence_view_preserves_all_original_text_and_final_alternative(self):
-        text = "Nama pertama alpha. Pilihan lain beta. Jika gamma, bagaimana?"
-        original = [{"source_id": "A", "text": text, "corpus_sha256": "hash"}]
-        view = evidence_view(original)
-        self.assertEqual(view[0]["text"], text)
-        self.assertEqual(view[0]["source_id"], "A")
-        self.assertEqual(view[0]["sentences"][-1], "Jika gamma, bagaimana?")
-        self.assertNotIn("sentences", original[0])
 
     def test_accept_cannot_silently_replace_candidate(self):
         candidate = {"answer": "Original", "sources": ["A"], "abstain": False}
