@@ -67,15 +67,21 @@ def checked_response(value, candidate, evidence):
 
 
 def verification_schema(candidate, evidence):
-    # Keep semantic choices in one object; enforce status/citation combinations
-    # at checked_response instead of selecting a grammar branch prematurely.
-    return {"type": "object", "additionalProperties": False,
-            "required": ["reason", "answer", "sources", "decision"], "properties": {
-                "reason": {"type": "string", "minLength": 1},
-                "answer": {"type": "string", "minLength": 1},
-                "sources": {"type": "array", "items": {"type": "string",
-                            "enum": [e["source_id"] for e in evidence]}},
-                "decision": {"type": "string", "enum": ["accept", "revise", "abstain", "needs_review"]}}}
+    variants = []
+    for decision in ("accept", "revise", "abstain", "needs_review"):
+        no_sources = decision in ("abstain", "needs_review") or (decision == "accept" and candidate["abstain"])
+        sources = {"type": "array", "items": {"type": "string", "enum": [e["source_id"] for e in evidence]}}
+        if no_sources:
+            sources["maxItems"] = 0
+        else:
+            sources["minItems"] = 1
+        variants.append({"type": "object", "additionalProperties": False,
+              "required": ["reason", "answer", "sources", "decision"], "properties": {
+                  "reason": {"type": "string", "minLength": 1},
+                  "answer": {"type": "string", "minLength": 1},
+                  "sources": sources,
+                  "decision": {"type": "string", "enum": [decision]}}})
+    return {"anyOf": variants}
 
 
 def verifier_options():
