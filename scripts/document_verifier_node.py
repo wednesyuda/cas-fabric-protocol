@@ -38,10 +38,7 @@ RULE = ("Independently verify an answer against the supplied evidence and questi
         "contradicts itself or the question needs clarification. For revise provide the corrected "
         "answer and supporting source IDs. For abstain or needs_review sources must be empty. "
         "Explain conflicts when present. Historical conversation facts may be answered, but are "
-        "not approved current SOP. Before choosing a decision, use reason to identify the relevant "
-        "source IDs and exact evidence facts that answer the question, or the specific missing facts "
-        "or incompatible claims. Evaluate this evidence independently before comparing the candidate. "
-        "Return JSON in this order: reason, answer, sources, decision. Indonesian.")
+        "not approved current SOP. Return JSON: decision, answer, sources, reason. Indonesian.")
 
 
 def checked_response(value, candidate, evidence):
@@ -76,11 +73,11 @@ def verification_schema(candidate, evidence):
         else:
             sources["minItems"] = 1
         variants.append({"type": "object", "additionalProperties": False,
-              "required": ["reason", "answer", "sources", "decision"], "properties": {
-                  "reason": {"type": "string", "minLength": 1},
+              "required": ["decision", "answer", "sources", "reason"], "properties": {
+                  "decision": {"type": "string", "enum": [decision]},
                   "answer": {"type": "string", "minLength": 1},
                   "sources": sources,
-                  "decision": {"type": "string", "enum": [decision]}}})
+                  "reason": {"type": "string", "minLength": 1}}})
     return {"anyOf": variants}
 
 
@@ -95,8 +92,8 @@ def verifier_options():
 def generate(question, candidate, evidence):
     schema = verification_schema(candidate, evidence)
     messages = [{"role": "system", "content": RULE + " Output schema: " + json.dumps(schema)},
-                {"role": "user", "content": json.dumps({"question": question, "evidence": evidence,
-                                                         "candidate": candidate}, ensure_ascii=False)}]
+                {"role": "user", "content": json.dumps({"question": question, "candidate": candidate,
+                                                         "evidence": evidence}, ensure_ascii=False)}]
     content, tokens = complete(os.environ["CAS_VERIFIER_URL"], os.environ.get("CAS_VERIFIER_BACKEND", "ollama"),
         os.environ.get("CAS_VERIFIER_MODEL", "qwen2.5:3b"), messages, schema, verifier_options())
     return json.loads(content), tokens
